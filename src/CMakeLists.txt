@@ -186,7 +186,10 @@ elseif (MSVC)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /MANIFEST:NO")
 else ()
     # Boost on Raspberry-Pi does not link to pthreads explicitly.
-    target_link_libraries(OrcaSlicer ${CMAKE_DL_LIBS} -lstdc++ Threads::Threads pangoft2-1.0)
+    target_link_libraries(OrcaSlicer ${CMAKE_DL_LIBS} Threads::Threads)
+    if (NOT ANDROID)
+        target_link_libraries(OrcaSlicer -lstdc++ pangoft2-1.0)
+    endif ()
 endif ()
 
 if (SLIC3R_GUI)

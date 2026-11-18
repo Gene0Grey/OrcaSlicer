@@ -81,6 +81,15 @@ else()
             set(_cross_arch "linux-armv4")
         endif ()
     endif ()
+    if (ANDROID)
+        # OpenSSL's own android-* targets find the NDK clang through PATH and ANDROID_NDK_ROOT.
+        set(_android_env env "ANDROID_NDK_ROOT=${ANDROID_NDK}" "ANDROID_NDK_HOME=${ANDROID_NDK}" "PATH=${ANDROID_TOOLCHAIN_ROOT}/bin:$ENV{PATH}")
+        set(_conf_cmd ${_android_env} ./Configure -D__ANDROID_API__=${ANDROID_PLATFORM_LEVEL})
+        set(_cross_arch "android-${ANDROID_ARCH_NAME}")
+        set(_cross_comp_prefix_line "")
+        set(_make_cmd ${_android_env} make -j${NPROC})
+        set(_install_cmd ${_android_env} make -j${NPROC} install_sw)
+    endif ()
 endif()
 
 ExternalProject_Add(dep_OpenSSL

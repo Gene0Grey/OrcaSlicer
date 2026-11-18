@@ -1,0 +1,7 @@
+.gradle/
+build/
+app/build/
+local.properties
+app/src/main/jniLibs/
+app/src/main/assets/orca/
+.claude-flow/

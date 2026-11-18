@@ -38,8 +38,16 @@ if (MSVC AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
     endif ()
 endif ()
 
+# Boost.Locale's IDE-only source_group(TREE ...) lists locale.hpp outside its tree,
+# which CMake rejects when configuring for Android. Drop that line there.
+set(_boost_patch "")
+if (ANDROID)
+    set(_boost_patch PATCH_COMMAND sed -i "/source_group(TREE.*include\\/boost\\/locale/d" libs/locale/CMakeLists.txt)
+endif ()
+
 orcaslicer_add_cmake_project(Boost
     ${_options}
+    ${_boost_patch}
     URL "https://github.com/boostorg/boost/releases/download/boost-1.84.0/boost-1.84.0.tar.gz"
     URL_HASH SHA256=4d27e9efed0f6f152dc28db6430b9d3dfb40c0345da7342eaa5a987dde57bd95
     LIST_SEPARATOR |

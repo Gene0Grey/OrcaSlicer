@@ -110,6 +110,11 @@ endif()
 
 option(SLIC3R_STATIC            "Compile OrcaSlicer with static libraries (Boost, TBB)" ${SLIC3R_STATIC_INITIAL})
 option(SLIC3R_GUI               "Compile OrcaSlicer with GUI components (OpenGL, wxWidgets)" 1)
+if (ANDROID)
+    # wxWidgets has no Android port; Android builds libslic3r and the CLI only.
+    set(SLIC3R_GUI OFF CACHE BOOL "" FORCE)
+    set(ORCA_BUILD_PYTHON_STUBGEN_MODULE OFF CACHE BOOL "" FORCE)
+endif ()
 option(SLIC3R_CAD               "Compile OrcaSlicer with the parametric Design/CAD tab (needs OCCT ModelingAlgorithms)" 1)
 option(SLIC3R_FHS               "Assume OrcaSlicer is to be installed in a FHS directory structure" 0)
 option(SLIC3R_PROFILE           "Compile OrcaSlicer with an invasive Shiny profiler" 0)
@@ -545,6 +550,8 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
 
     find_package(DBus REQUIRED)
     include_directories(SYSTEM ${DBUS_INCLUDE_DIRS})
+elseif (ANDROID)
+    find_package(Threads REQUIRED)
 endif()
 
 if (CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_GNUXX)
@@ -904,6 +911,7 @@ find_package(EXPAT 2.10.0 REQUIRED)
 
 find_package(PNG REQUIRED)
 
+if (SLIC3R_GUI)
 set(OpenGL_GL_PREFERENCE "LEGACY")
 find_package(OpenGL REQUIRED)
 
@@ -912,6 +920,7 @@ if(APPLE AND CMAKE_VERSION VERSION_GREATER_EQUAL "4.0")
 endif()
 
 find_package(glfw3 REQUIRED)
+endif () # SLIC3R_GUI
 
 # Find the Cereal serialization library
 find_package(cereal REQUIRED)
@@ -964,6 +973,8 @@ endforeach()
 
 find_package(NLopt 1.4 REQUIRED)
 
+# The bundled Python is only embedded by the GUI (plugins).
+if (SLIC3R_GUI)
 # Use bundled Python from deps instead of system Python
 set(_bundled_python_version "3.12.13")
 set(_bundled_python_abi "312")
@@ -1043,6 +1054,7 @@ add_library(pybind11_embed INTERFACE)
 target_link_libraries(pybind11_embed INTERFACE pybind11_headers Python3::Python)
 target_compile_definitions(pybind11_embed INTERFACE PYBIND11_SIMPLE_GIL_MANAGEMENT)
 add_library(pybind11::embed ALIAS pybind11_embed)
+endif () # SLIC3R_GUI
 
 
 if(SLIC3R_STATIC)

@@ -8198,6 +8198,11 @@ bool CLI::setup(int argc, char **argv)
         path_resources = boost::filesystem::canonical(path_to_binary).parent_path().parent_path().parent_path() / "resources";
     }
 #endif
+#ifdef __ANDROID__
+    // The binary lives in the read-only APK lib dir; the app extracts resources to its own storage.
+    if (const char *dir = ::getenv("ORCA_RESOURCES_DIR"))
+        path_resources = dir;
+#endif
 
     set_resources_dir(path_resources.string());
     set_var_dir((path_resources / "images").string());

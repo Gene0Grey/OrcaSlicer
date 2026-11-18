@@ -37,7 +37,7 @@ elseif (APPLE)
 
     -DCURL_CA_PATH:STRING=none
   )
-elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR ANDROID)
   set(_curl_platform_flags 
 
     ${_curl_platform_flags}

@@ -17,7 +17,9 @@ add_subdirectory(Shiny)
 add_subdirectory(admesh)
 add_subdirectory(clipper2)
 add_subdirectory(glu-libtess)
-add_subdirectory(hidapi)
+if (NOT ANDROID) # libudev-based backend; Android would need the USB Host API
+    add_subdirectory(hidapi)
+endif ()
 add_subdirectory(hints)        # Hints library with utility executable
 add_subdirectory(imgui)
 add_subdirectory(imguizmo)
