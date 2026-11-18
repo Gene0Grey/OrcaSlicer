@@ -29,4 +29,4 @@ OPENCV_CONFIG=$(find "$PREFIX" -name OpenCVConfig.cmake | awk '{ print length, $
     -DBUILD_TESTS="${BUILD_TESTS:-OFF}"
 
 # Low-RAM hosts: big libslic3r translation units need 1-2 GB each.
-"$CMAKE" --build "$BUILD" --target "${TARGETS[@]}" -j "${JOBS:-3}"
+"$CMAKE" --build "$BUILD" --target "${TARGETS[@]}" -j "${JOBS:-3}" -- -k 0 # report every compile error in one pass
