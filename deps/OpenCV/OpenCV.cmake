@@ -24,6 +24,12 @@ if (MSVC AND CMAKE_CXX_COMPILER_ID STREQUAL Clang)
     set(_clang_cl_flags "-DOPENCV_EXTRA_CXX_FLAGS=-fno-delayed-template-parsing")
 endif ()
 
+set(_android_opts "")
+if (ANDROID)
+    # OpenCV's Android build otherwise adds its Gradle sample projects.
+    set(_android_opts -DBUILD_ANDROID_PROJECTS=OFF -DBUILD_ANDROID_EXAMPLES=OFF -DBUILD_FAT_JAVA_LIB=OFF -DBUILD_KOTLIN_EXTENSIONS=OFF)
+endif ()
+
 orcaslicer_add_cmake_project(OpenCV
     ${_options}
     URL https://github.com/opencv/opencv/archive/refs/tags/4.14.0.tar.gz
@@ -101,6 +107,7 @@ orcaslicer_add_cmake_project(OpenCV
        -DWITH_WIN32UI=OFF
        -DHAVE_WIN32UI=FALSE
        ${_disable_carotene}
+       ${_android_opts}
        ${_clang_cl_flags}
 )
 
