@@ -24,15 +24,18 @@ class OrbitCamera {
     var elevation = 35f  // degrees above the plate
     val view = FloatArray(16)
     val proj = FloatArray(16)
+    var aspect = 1f
 
     fun fit(minX: Float, minY: Float, maxX: Float, maxY: Float, height: Float = 0f) {
         tx = (minX + maxX) / 2; ty = (minY + maxY) / 2; tz = height / 3
+        // Keep the whole plate in view: on a portrait screen the width is the limit (fov 35°: 2*tan = 0.63).
         val size = max(maxX - minX, maxY - minY)
-        distance = size * 1.9f + 60f
+        distance = size * 1.15f / (0.63f * aspect.coerceAtMost(1f)) + 20f
         azimuth = -90f; elevation = 35f
     }
 
     fun update(width: Int, height: Int) {
+        aspect = width.toFloat() / max(1, height)
         val az = Math.toRadians(azimuth.toDouble()); val el = Math.toRadians(elevation.toDouble())
         val ex = tx + distance * (cos(el) * cos(az)).toFloat()
         val ey = ty + distance * (cos(el) * sin(az)).toFloat()
@@ -75,7 +78,11 @@ class SceneView(context: Context, val camera: OrbitCamera, private val dark: Boo
 
     private val renderer = object : Renderer {
         override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) = OrcaCore.glInit()
-        override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) = OrcaCore.glResize(width, height)
+        override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
+            OrcaCore.glResize(width, height)
+            camera.aspect = width.toFloat() / max(1, height)
+            main.post { onFit() }
+        }
         override fun onDrawFrame(gl: GL10?) {
             camera.update(width, height)
             val bg = if (dark) floatArrayOf(0.17f, 0.17f, 0.18f) else floatArrayOf(0.90f, 0.90f, 0.91f)

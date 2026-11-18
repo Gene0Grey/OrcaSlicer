@@ -79,7 +79,7 @@ class MainActivity : ComponentActivity() {
         val state = AppState(applicationContext)
         setContent {
             val dark = isSystemInDarkTheme()
-            val scheme = if (dark) darkColorScheme(primary = OrcaTeal, secondary = OrcaTeal, secondaryContainer = Color(0xFF00504A), onSecondaryContainer = Color.White)
+            val scheme = if (dark) darkColorScheme(primary = OrcaTeal, onPrimary = Color.White, secondary = OrcaTeal, secondaryContainer = Color(0xFF00504A), onSecondaryContainer = Color.White)
                          else lightColorScheme(primary = OrcaTeal, secondary = OrcaTeal, secondaryContainer = Color(0xFFB2DFDB))
             MaterialTheme(colorScheme = scheme) {
                 Surface(Modifier.fillMaxSize()) { App(state, dark) }

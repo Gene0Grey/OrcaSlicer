@@ -201,13 +201,34 @@ json slice_stats_json()
             {"gcode", g_session.gcode_path}};
 }
 
+// Reports slicing progress to Kotlin. The slicer calls back from its TBB worker threads, so each
+// call attaches its thread to the VM (as a daemon: TBB keeps its workers) and the listener is a
+// global reference.
 struct ProgressListener
 {
-    JNIEnv   *env;
-    jobject   obj;
-    jmethodID method;
-    void operator()(int percent, const std::string &text) const
+    JavaVM   *vm = nullptr;
+    jobject   obj = nullptr;
+    jmethodID method = nullptr;
+    std::mutex mutex;
+
+    ProgressListener(JNIEnv *env, jobject listener)
     {
+        env->GetJavaVM(&vm);
+        obj    = env->NewGlobalRef(listener);
+        method = env->GetMethodID(env->GetObjectClass(listener), "onProgress", "(ILjava/lang/String;)V");
+    }
+    ~ProgressListener()
+    {
+        JNIEnv *env = nullptr;
+        if (vm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6) == JNI_OK) env->DeleteGlobalRef(obj);
+    }
+    void operator()(int percent, const std::string &text)
+    {
+        std::lock_guard lock(mutex);
+        JNIEnv *env = nullptr;
+        if (vm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6) != JNI_OK &&
+            vm->AttachCurrentThreadAsDaemon(&env, nullptr) != JNI_OK)
+            return;
         jstring t = env->NewStringUTF(text.c_str());
         env->CallVoidMethod(obj, method, jint(percent), t);
         env->DeleteLocalRef(t);
@@ -484,7 +505,7 @@ JNI(jstring, slice)(JNIEnv *env, jobject, jobject listener)
         if (g_session.model.objects.empty())
             return to_j(env, json{{"error", "Add a model to the plate first."}}.dump());
         DynamicPrintConfig cfg = b.full_config();
-        ProgressListener progress{env, listener, env->GetMethodID(env->GetObjectClass(listener), "onProgress", "(ILjava/lang/String;)V")};
+        ProgressListener progress(env, listener);
 
         g_session.print = std::make_unique<Print>();
         Print &print = *g_session.print;
