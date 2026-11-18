@@ -219,7 +219,7 @@ fun PresetSelector(state: AppState, kind: Int, selected: String, items: List<Pre
         Surface(onClick = { open = true }, color = Color.Transparent, shape = MaterialTheme.shapes.small,
             modifier = Modifier.weight(1f).heightIn(min = 44.dp).flap(if (dirty) Board.amber else null)) {
             Row(Modifier.padding(start = 10.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(selected.uppercase(), Modifier.weight(1f).padding(vertical = 11.dp), style = MaterialTheme.typography.labelLarge,
+                Text(shortName(selected, state.presets.vendor).uppercase(), Modifier.weight(1f).padding(vertical = 11.dp), style = MaterialTheme.typography.labelLarge,
                     color = if (dirty) Board.amber else Board.letter, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Icon(Icons.Default.ArrowDropDown, null, tint = Board.steelLight)
             }
@@ -247,6 +247,10 @@ fun PresetSelector(state: AppState, kind: Int, selected: String, items: List<Pre
         )
     }
 }
+
+/** Board-length preset name: no "@Printer" suffix, no leading vendor name (the full name is in the menu). */
+fun shortName(name: String, vendor: String): String =
+    name.substringBefore(" @").let { if (vendor.isNotBlank() && it.startsWith("$vendor ", ignoreCase = true)) it.substring(vendor.length + 1) else it }
 
 @Composable
 private fun PresetItemRow(name: String, active: Boolean, onClick: () -> Unit) =

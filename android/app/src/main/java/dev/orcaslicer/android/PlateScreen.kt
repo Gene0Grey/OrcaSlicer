@@ -66,7 +66,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.launch
 
-private val SETUP_PEEK = 204.dp
+private val SETUP_PEEK = 236.dp
 private val RESULTS_PEEK = 150.dp
 
 /** Prepare and Preview: the plate view with its board overlays, and the setup/results sheet. */
@@ -79,6 +79,7 @@ fun PlateScreen(state: AppState, host: PlateHost, wide: Boolean) {
     }
     val plate: @Composable (Dp) -> Unit = { bottomInset ->
         Box(Modifier.fillMaxSize()) {
+            host.camera.bottomInsetPx = with(androidx.compose.ui.platform.LocalDensity.current) { bottomInset.toPx() }
             SceneHost(state, host)
             if (prepare) PrepareOverlay(state, host, bottomInset) else PreviewOverlay(state, host, bottomInset)
             state.sliceProgress?.let { (p, t) -> SliceProgressBoard(p, t, Modifier.align(Alignment.TopCenter).padding(top = 72.dp)) }
@@ -141,11 +142,12 @@ private fun PrepareOverlay(state: AppState, host: PlateHost, bottomInset: Dp) {
             }
             if (outside) StatusLine("Off the plate: move or scale the red object to slice", Board.red)
             else hint?.let { StatusLine(it, Board.steelLight) }
+            if (sel != null) ObjectBar(state, sel, host)
         }
-        ToolRail(state, Modifier.align(Alignment.CenterStart).padding(start = 8.dp))
+        // Centred in the visible strip between the plate bar and the sheet peek.
+        ToolRail(state, Modifier.align(Alignment.CenterStart).padding(start = 8.dp, top = 56.dp, bottom = bottomInset))
         Column(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = bottomInset + 16.dp), horizontalAlignment = Alignment.End,
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (sel != null) ObjectBar(state, sel, host)
             ExtendedFloatingActionButton(
                 onClick = { if (state.objects.isNotEmpty() && !outside && state.sliceProgress == null) host.slice() },
                 containerColor = if (state.objects.isNotEmpty() && !outside) Board.teal else Board.frame,
@@ -165,7 +167,7 @@ private fun PlateBar(state: AppState, host: PlateHost) {
     Row(Modifier.fillMaxWidth().background(Board.flap.copy(alpha = 0.86f)).padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         FlapCell("PLATE 01", color = Board.tealText)
-        FlapCell(when (val n = state.objects.size) { 0 -> "EMPTY"; 1 -> "1 OBJECT"; else -> "$n OBJECTS" }, Modifier.weight(1f, fill = false))
+        FlapCell(when (val n = state.objects.size) { 0 -> "EMPTY"; 1 -> "1 OBJECT"; else -> "$n OBJECTS" }, style = MaterialTheme.typography.labelMedium)
         Spacer(Modifier.weight(1f))
         BarIcon(Icons.AutoMirrored.Filled.Undo, "Undo", state.canUndo) { scope.launch { state.undo() } }
         BarIcon(Icons.AutoMirrored.Filled.Redo, "Redo", state.canRedo) { scope.launch { state.redo() } }
@@ -231,11 +233,12 @@ private fun ToolRail(state: AppState, modifier: Modifier) {
 @Composable
 private fun ObjectBar(state: AppState, o: PlateObject, host: PlateHost) {
     val scope = rememberCoroutineScope()
-    Column(Modifier.widthIn(max = 340.dp).steel().padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            FlapCell(o.name.ifBlank { "OBJECT" }.uppercase().take(18), Modifier.weight(1f, fill = false), color = if (o.outside) Board.red else Board.tealText)
-            FlapCell("%.0f×%.0f×%.0f".format(o.size[0], o.size[1], o.size[2]), style = MaterialTheme.typography.labelMedium)
-        }
+    Row(Modifier.fillMaxWidth().steel().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+      Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(o.name.ifBlank { "Object" }.uppercase(), style = MaterialTheme.typography.labelLarge, color = if (o.outside) Board.red else Board.tealText, maxLines = 1)
+        Text("%.1f × %.1f × %.1f MM".format(o.size[0], o.size[1], o.size[2]), style = MaterialTheme.typography.labelSmall, color = Board.steelLight)
+      }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             ObjectAction(Icons.Default.ScreenRotation, "Orient") { scope.launch { state.objectOp(3) } }
             ObjectAction(Icons.Default.Tune, "Exact", onClick = host.exactTransform)
@@ -248,7 +251,7 @@ private fun ObjectBar(state: AppState, o: PlateObject, host: PlateHost) {
 @Composable
 private fun ObjectAction(icon: ImageVector, label: String, tint: Color = Board.letter, onClick: () -> Unit) =
     Surface(onClick = onClick, color = Color.Transparent, shape = MaterialTheme.shapes.small,
-        modifier = Modifier.size(width = 76.dp, height = 56.dp).flap().semantics { contentDescription = label }) {
+        modifier = Modifier.size(width = 56.dp, height = 56.dp).flap().semantics { contentDescription = label }) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Icon(icon, null, tint = tint, modifier = Modifier.size(20.dp))
             Text(label.uppercase(), style = MaterialTheme.typography.labelSmall, color = tint)

@@ -25,6 +25,8 @@ class OrbitCamera {
     val view = FloatArray(16)
     val proj = FloatArray(16)
     var aspect = 1f
+    /** Pixels at the bottom covered by UI (the sheet peek); the view centre is lifted above them. */
+    var bottomInsetPx = 0f
 
     fun fit(minX: Float, minY: Float, maxX: Float, maxY: Float, height: Float = 0f) {
         tx = (minX + maxX) / 2; ty = (minY + maxY) / 2; tz = height / 3
@@ -42,6 +44,11 @@ class OrbitCamera {
         val ez = tz + distance * sin(el).toFloat()
         Matrix.setLookAtM(view, 0, ex, ey, ez, tx, ty, tz, 0f, 0f, 1f)
         Matrix.perspectiveM(proj, 0, 35f, width.toFloat() / max(1, height), max(1f, distance * 0.02f), distance * 8f + 2000f)
+        if (bottomInsetPx > 0f) {
+            // Lens shift: move the image up by half the covered strip so the plate centres in the visible part.
+            val shift = FloatArray(16); Matrix.setIdentityM(shift, 0); Matrix.translateM(shift, 0, 0f, bottomInsetPx / max(1, height), 0f)
+            val out = FloatArray(16); Matrix.multiplyMM(out, 0, shift, 0, proj, 0); out.copyInto(proj)
+        }
     }
 
     fun orbit(dxPx: Float, dyPx: Float) {
