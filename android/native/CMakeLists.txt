@@ -5,6 +5,8 @@ set(SLIC3R_OPENGL_ES ON)
 add_subdirectory(${CMAKE_SOURCE_DIR}/src/libvgcode ${CMAKE_CURRENT_BINARY_DIR}/libvgcode)
 # Use the platform's EGL headers for eglGetProcAddress instead of glad's own egl loader.
 target_compile_definitions(libvgcode PRIVATE GLAD_GLES2_USE_SYSTEM_EGL=1)
+# glad null-checks eglGetProcAddress, which the system header declares as a function.
+target_compile_options(libvgcode PRIVATE -Wno-tautological-pointer-compare)
 
 # liborca_core.so: the JNI library the app loads (OrcaCore.kt).
 add_library(orca_core SHARED
