@@ -29,6 +29,7 @@ data class FilamentSettings(
     val type: String = "PLA",
     val nozzleTemp: Int = 210,
     val bedTemp: Int = 60,
+    val density: Float = 1.24f,
 )
 
 data class SliceResult(val gcode: File, val time: String?, val filamentGrams: String?, val layers: String?)
@@ -135,7 +136,8 @@ class Slicer(private val context: Context) {
             put("retraction_length", arr(if (p.flavor == "klipper") 0.8 else 2))
             put("machine_start_gcode", START_GCODE)
             put("machine_end_gcode", END_GCODE)
-            put("layer_change_gcode", "")
+            // Relative extrusion needs the E axis reset every layer.
+            put("layer_change_gcode", "G92 E0")
         }
 
         fun processJson(s: PrintSettings, p: PrinterSettings) = JSONObject().apply {
@@ -155,6 +157,7 @@ class Slicer(private val context: Context) {
             put("type", "filament"); put("from", "User"); put("name", "Android ${f.type}")
             put("filament_type", arr(f.type))
             put("filament_diameter", arr(1.75))
+            put("filament_density", arr(f.density))
             put("nozzle_temperature", arr(f.nozzleTemp))
             put("nozzle_temperature_initial_layer", arr(f.nozzleTemp + 5))
             // Every plate type gets the same bed temperature; the generic printer has no plate choice.

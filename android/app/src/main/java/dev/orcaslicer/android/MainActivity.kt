@@ -88,8 +88,8 @@ private val PRINTERS = listOf(
     PrinterSettings("Klipper 300x300", 300, 300, 300, flavor = "klipper"),
 )
 private val FILAMENTS = listOf(
-    FilamentSettings("PLA", 210, 60), FilamentSettings("PETG", 240, 75),
-    FilamentSettings("ABS", 250, 100), FilamentSettings("TPU", 225, 40),
+    FilamentSettings("PLA", 210, 60, 1.24f), FilamentSettings("PETG", 240, 75, 1.27f),
+    FilamentSettings("ABS", 250, 100, 1.04f), FilamentSettings("TPU", 225, 40, 1.21f),
 )
 
 @OptIn(ExperimentalLayoutApi::class)
