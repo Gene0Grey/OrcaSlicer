@@ -184,7 +184,7 @@ private fun SliceScreen(slicer: Slicer) {
                     scope.launch {
                         state = try {
                             SliceState.Done(slicer.slice(m, printer, print, filament) { line ->
-                                if (line.isNotBlank()) scope.launch { if (state is SliceState.Running) state = SliceState.Running(line.trim()) }
+                                if (line.isNotBlank()) scope.launch { if (state is SliceState.Running) state = SliceState.Running(line.trim().removePrefix("PROGRESS ")) }
                             })
                         } catch (e: Exception) {
                             SliceState.Failed(e.message ?: e.toString())

@@ -59,12 +59,12 @@ jobs:
           path: ${{ env.ORCA_ANDROID_OUT }}/prefix-arm64-v8a
           key: ${{ steps.deps-cache.outputs.cache-primary-key }}
 
-      - name: Build libslic3r + orca-slicer CLI
-        run: bash android/scripts/build_core.sh "$ORCA_ABI" OrcaSlicer
+      - name: Build libslic3r + Android slicer
+        run: bash android/scripts/build_core.sh "$ORCA_ABI" orca_android_slice
 
       - name: Package native libs into the app
         run: |
-          BIN=$(find "$ORCA_ANDROID_OUT/core-$ORCA_ABI" -name orca-slicer -type f | head -1)
+          BIN=$(find "$ORCA_ANDROID_OUT/core-$ORCA_ABI" -name orca_android_slice -type f | head -1)
           NDK="$ANDROID_TOOLS/android-ndk-r29"
           STRIP="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
           LIBS=android/app/src/main/jniLibs/$ORCA_ABI

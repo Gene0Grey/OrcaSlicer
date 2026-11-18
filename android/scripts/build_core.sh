@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Cross-compile libslic3r and the headless orca-slicer CLI for Android.
+# Cross-compile libslic3r and the Android slicer driver (android/native).
 # Needs the deps prefix from build_deps.sh. Usage: build_core.sh [abi] [targets...]
 set -euo pipefail
 
 ABI=${1:-arm64-v8a}; shift || true
-TARGETS=("${@:-OrcaSlicer}")
+TARGETS=("${@:-orca_android_slice}")
 API=${ANDROID_API:-29}
 TOOLS=${ANDROID_TOOLS:-$HOME/android-tools}
 NDK=${ANDROID_NDK:-$TOOLS/android-ndk-r29}

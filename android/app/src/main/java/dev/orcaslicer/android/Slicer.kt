@@ -36,7 +36,7 @@ data class SliceResult(val gcode: File, val time: String?, val filamentGrams: St
 class SliceException(message: String) : Exception(message)
 
 /**
- * Runs the headless orca-slicer CLI (packaged as liborcaslicer_cli.so so Android extracts it to the
+ * Runs the android/native slicer driver (packaged as liborcaslicer_cli.so so Android extracts it to the
  * executable native lib dir). ponytail: process boundary instead of JNI; swap for a JNI facade when
  * the app needs live model state (3D view, per-object settings).
  */
@@ -73,19 +73,18 @@ class Slicer(private val context: Context) {
 
         val cmd = listOf(
             binary.path,
+            "--resources", resourcesDir.path,
             "--datadir", File(root, "datadir").apply { mkdirs() }.path,
-            "--load-settings", "${machine.path};${process.path}",
-            "--load-filaments", fil.path,
-            "--arrange", "1",
-            "--slice", "0",
-            "--outputdir", out.path,
+            "--machine", machine.path,
+            "--process", process.path,
+            "--filament", fil.path,
+            "--output", File(out, "${model.nameWithoutExtension}.gcode").path,
             model.path,
         )
         val proc = ProcessBuilder(cmd)
             .directory(work)
             .redirectErrorStream(true)
             .apply {
-                environment()["ORCA_RESOURCES_DIR"] = resourcesDir.path
                 environment()["LD_LIBRARY_PATH"] = context.applicationInfo.nativeLibraryDir
                 environment()["HOME"] = root.path
             }

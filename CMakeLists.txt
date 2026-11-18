@@ -1267,6 +1267,9 @@ elseif (MSVC AND NOT IS_CLANG_CL)
 endif ()
 
 add_subdirectory(src)
+if (ANDROID)
+    add_subdirectory(android/native)
+endif ()
 set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT OrcaSlicer_app_gui)
 
 add_dependencies(gettext_make_pot hintsToPot)
