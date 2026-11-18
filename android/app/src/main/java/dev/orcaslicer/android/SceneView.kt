@@ -73,6 +73,9 @@ class SceneView(context: Context, val camera: OrbitCamera, private val dark: Boo
     var onPick: (Int) -> Unit = {}
     var onPreviewInfo: (String) -> Unit = {}
     var onFit: () -> Unit = {}
+    var onGizmoEnd: () -> Unit = {}
+    @Volatile var gizmoMode = 0
+    private var dragging = false
     @Volatile private var wantPreviewInfo = false
     private val main = Handler(Looper.getMainLooper())
 
@@ -124,7 +127,27 @@ class SceneView(context: Context, val camera: OrbitCamera, private val dark: Boo
         override fun onDoubleTap(e: MotionEvent): Boolean { onFit(); requestRender(); return true }
     })
 
+    private fun gizmo(e: MotionEvent): Boolean {
+        if (mode != 0 || gizmoMode == 0) return false
+        camera.update(width, height)
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN ->
+                dragging = OrcaCore.gizmoBegin(e.x, e.y, width, height, camera.view.clone(), camera.proj.clone()) != 0
+            MotionEvent.ACTION_MOVE -> if (dragging) OrcaCore.gizmoDrag(e.x, e.y, width, height, camera.view.clone(), camera.proj.clone())
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_POINTER_DOWN -> if (dragging) {
+                OrcaCore.gizmoEnd(); dragging = false; onGizmoEnd()
+                requestRender()
+                return e.actionMasked != MotionEvent.ACTION_POINTER_DOWN
+            }
+        }
+        if (dragging) requestRender()
+        return dragging
+    }
+
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        // A touch that starts on a gizmo handle (or the selected object, when moving) drags it;
+        // anything else drives the camera.
+        if (gizmo(e)) return true
         scale.onTouchEvent(e)
         taps.onTouchEvent(e)
         val cx = (0 until e.pointerCount).map { e.getX(it) }.average().toFloat()

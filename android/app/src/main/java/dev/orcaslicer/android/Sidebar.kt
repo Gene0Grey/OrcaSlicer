@@ -138,21 +138,6 @@ fun Dropdown(selected: String, options: List<String>, modifier: Modifier = Modif
     }
 }
 
-@Composable
-private fun ObjectList(state: AppState) {
-    val scope = rememberCoroutineScope()
-    if (state.objects.isEmpty()) Text("No objects on the plate.", Modifier.padding(16.dp))
-    state.objects.forEachIndexed { i, o ->
-        ListItem(
-            headlineContent = { Text(o.name.ifBlank { "Object ${i + 1}" }) },
-            supportingContent = { Text("%.1f × %.1f × %.1f mm".format(o.size[0], o.size[1], o.size[2])) },
-            modifier = Modifier.border(if (o.selected) 2.dp else 0.dp, if (o.selected) MaterialTheme.colorScheme.primary else Color.Transparent)
-                .padding(horizontal = 4.dp),
-            trailingContent = { TextButton({ scope.launch { state.select(i) } }) { Text(if (o.selected) "Selected" else "Select") } },
-        )
-    }
-}
-
 /** Full-screen settings for a preset kind (printer / filament), opened by the pencil buttons. */
 @Composable
 fun PresetEditorDialog(state: AppState, kind: Int, onClose: () -> Unit) {

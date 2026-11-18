@@ -112,8 +112,14 @@ private fun GroupHeader(title: String) {
 @Composable
 fun OptionRow(state: AppState, kind: Int, def: OptionDef, value: String) {
     val scope = rememberCoroutineScope()
+    OptionRow(def, value, { v -> scope.launch { state.setValue(kind, def.key, v) } })
+}
+
+/** One setting: label (tap for its tooltip), editor by option type, optional trailing action. */
+@Composable
+fun OptionRow(def: OptionDef, value: String, onSet: (String) -> Unit, trailing: @Composable () -> Unit = {}) {
     var info by remember { mutableStateOf(false) }
-    val set: (String) -> Unit = { v -> if (v != value) scope.launch { state.setValue(kind, def.key, v) } }
+    val set: (String) -> Unit = { v -> if (v != value) onSet(v) }
     val label = def.label.ifBlank { def.fullLabel.ifBlank { def.key } }
 
     Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -130,6 +136,7 @@ fun OptionRow(state: AppState, kind: Int, def: OptionDef, value: String) {
             }
         }
         IconButton(onClick = { info = true }, Modifier.size(40.dp)) { Icon(Icons.Default.Info, "About $label", tint = MaterialTheme.colorScheme.outline) }
+        trailing()
     }
     if (info) AlertDialog(
         onDismissRequest = { info = false }, confirmButton = { TextButton({ info = false }) { Text("OK") } },

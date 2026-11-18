@@ -31,6 +31,9 @@ import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.OpenWith
+import androidx.compose.material.icons.filled.PhotoSizeSelectSmall
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.automirrored.filled.RotateRight
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.ScreenRotation
@@ -40,6 +43,7 @@ import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -107,8 +111,9 @@ fun App(state: AppState, dark: Boolean) {
         scene?.requestRender()
     }
     LaunchedEffect(state.presets.bed) { fit() }
-    LaunchedEffect(state.objects, state.presets, state.screen) {
+    LaunchedEffect(state.objects, state.presets, state.screen, state.gizmoMode) {
         scene?.mode = if (state.screen == Screen.Preview) 1 else 0
+        scene?.gizmoMode = state.gizmoMode
         scene?.requestRender()
         if (state.screen == Screen.Preview && state.stats != null) scene?.requestPreviewInfo()
     }
@@ -159,6 +164,8 @@ fun App(state: AppState, dark: Boolean) {
                                     v.onPick = { idx -> scope.launch { state.select(idx) } }
                                     v.onFit = ::fit
                                     v.onPreviewInfo = { preview = PreviewInfo.parse(it) }
+                                    v.onGizmoEnd = { scope.launch { state.afterGizmo() } }
+                                    v.gizmoMode = state.gizmoMode
                                     v.mode = if (state.screen == Screen.Preview) 1 else 0
                                     scene = v
                                 }
@@ -221,17 +228,36 @@ private fun TabButton(icon: ImageVector, label: String, selected: Boolean, onCli
 private fun PrepareToolbar(state: AppState, onAdd: () -> Unit, onFit: () -> Unit, onTransform: () -> Unit) {
     val scope = rememberCoroutineScope()
     val sel = state.selected >= 0
+    Column {
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Tool(Icons.Default.AddBox, "Add model", true, onAdd)
         Tool(Icons.Default.AutoAwesomeMosaic, "Arrange", state.objects.isNotEmpty()) { scope.launch { state.objectOp(2) } }
         Tool(Icons.Default.ScreenRotation, "Auto orient", sel) { scope.launch { state.objectOp(3) } }
-        Tool(Icons.Default.OpenWith, "Move / rotate / scale", sel, onTransform)
+        Toggle(Icons.Default.OpenWith, "Move", sel, state.gizmoMode == 1) { state.setGizmo(1) }
+        Toggle(Icons.AutoMirrored.Filled.RotateRight, "Rotate", sel, state.gizmoMode == 2) { state.setGizmo(2) }
+        Toggle(Icons.Default.PhotoSizeSelectSmall, "Scale", sel, state.gizmoMode == 3) { state.setGizmo(3) }
+        Tool(Icons.Default.Tune, "Exact position / rotation / scale", sel, onTransform)
         Tool(Icons.Default.ContentCopy, "Duplicate", sel) { scope.launch { state.objectOp(1) } }
         Tool(Icons.Default.Delete, "Delete", sel) { scope.launch { state.objectOp(0) } }
         Tool(Icons.Default.DeleteSweep, "Clear plate", state.objects.isNotEmpty()) { scope.launch { state.objectOp(4, -1) } }
         Tool(Icons.Default.CenterFocusStrong, "Fit view", true, onFit)
     }
+    val hint = when {
+        state.gizmoMode != 0 && !sel -> "Tap an object to select it"
+        state.gizmoMode == 1 -> "Drag the object to slide it, or an arrow to move along one axis"
+        state.gizmoMode == 2 -> "Drag a ring to rotate (5° steps)"
+        state.gizmoMode == 3 -> "Drag a corner to scale"
+        else -> null
+    }
+    hint?.let { Surface(Modifier.padding(horizontal = 8.dp), shape = MaterialTheme.shapes.small, tonalElevation = 3.dp) { Text(it, Modifier.padding(8.dp), style = MaterialTheme.typography.labelMedium) } }
+    }
 }
+
+@Composable
+private fun Toggle(icon: ImageVector, label: String, enabled: Boolean, on: Boolean, onClick: () -> Unit) =
+    FilledTonalIconButton(onClick, enabled = enabled, modifier = Modifier.size(52.dp),
+        colors = if (on) IconButtonDefaults.filledTonalIconButtonColors(containerColor = Color(0xFFFFC107), contentColor = Color.Black)
+                 else IconButtonDefaults.filledTonalIconButtonColors()) { Icon(icon, label) }
 
 @Composable
 private fun Tool(icon: ImageVector, label: String, enabled: Boolean, onClick: () -> Unit) =

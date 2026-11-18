@@ -65,6 +65,9 @@ class AppState(private val context: Context) {
     var sliceProgress by mutableStateOf<Pair<Int, String>?>(null)
     var advanced by mutableStateOf(prefs.getBoolean("advanced", false))
     var projectName by mutableStateOf("Untitled")
+    var gizmoMode by mutableIntStateOf(0)
+    var objectKeys: List<String> = emptyList(); private set
+    val objectValues = mutableStateMapOf<Int, Map<String, String>>()
     var recent by mutableStateOf(prefs.getString("recent", "")!!.split('\n').filter { it.isNotBlank() })
 
     suspend fun start() = withContext(Dispatchers.IO) {
@@ -77,6 +80,7 @@ class AppState(private val context: Context) {
                 Vendor(v.getString("id"), v.getString("name"), v.getJSONArray("models").let { m -> (0 until m.length()).map(m::getString) })
             }.sortedBy { it.name.lowercase() }
         }
+        objectKeys = JSONArray(OrcaCore.objectSettingKeys()).let { a -> (0 until a.length()).map(a::getString) }
         val vendor = prefs.getString("vendor", null)
         if (vendor != null) loadVendor(vendor, prefs.getString("printer", "")!!)
         busy = null
@@ -141,6 +145,24 @@ class AppState(private val context: Context) {
         if (r.has("error")) { error = r.getString("error"); return@withContext false }
         stats = parseStats(r)
         true
+    }
+
+    fun setGizmo(mode: Int) {
+        gizmoMode = if (gizmoMode == mode) 0 else mode
+        OrcaCore.gizmoSetMode(gizmoMode)
+    }
+
+    suspend fun afterGizmo() = withContext(Dispatchers.IO) { refreshObjects(); stats = null }
+
+    fun refreshObjectValues(index: Int) {
+        objectValues[index] = JSONObject(OrcaCore.objectValues(index)).let { o -> o.keys().asSequence().associateWith { o.getString(it) } }
+    }
+
+    /** value null removes the override. */
+    suspend fun setObjectValue(index: Int, key: String, value: String?) = withContext(Dispatchers.IO) {
+        OrcaCore.setObjectValue(index, key, value)?.let { error = it }
+        refreshObjectValues(index)
+        stats = null
     }
 
     fun refreshValues(kind: Int) {

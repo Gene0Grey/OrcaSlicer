@@ -39,6 +39,17 @@ object OrcaCore {
     external fun slice(listener: ProgressListener): String
     external fun gcodePath(): String
 
+    /** mode: 0 off, 1 move, 2 rotate, 3 scale */
+    external fun gizmoSetMode(mode: Int)
+    external fun gizmoBegin(x: Float, y: Float, width: Int, height: Int, view: FloatArray, proj: FloatArray): Int
+    external fun gizmoDrag(x: Float, y: Float, width: Int, height: Int, view: FloatArray, proj: FloatArray)
+    external fun gizmoEnd()
+
+    external fun objectSettingKeys(): String
+    external fun objectValues(index: Int): String
+    /** value null removes the override */
+    external fun setObjectValue(index: Int, key: String, value: String?): String?
+
     // GL thread
     external fun glInit()
     external fun glResize(width: Int, height: Int)
