@@ -193,6 +193,8 @@ void load_preview()
     if (colors.empty()) colors.push_back("#26A69A");
     libvgcode::GCodeInputData data = libvgcode::convert(*g_session.result, colors, colors, gl.viewer);
     gl.viewer.load(std::move(data));
+    // As on the desktop: the moves slider walks the top layer only.
+    if (!gl.viewer.is_top_layer_only_view_range()) gl.viewer.toggle_top_layer_only_view_range();
     gl.preview_loaded = true;
 }
 
@@ -395,6 +397,8 @@ JNI(jstring, previewInfo)(JNIEnv *env, jobject)
         const auto fr  = gl.viewer.get_view_full_range();
         const auto vr  = gl.viewer.get_view_visible_range();
         out["full"]    = {fr[0], fr[1]};
+        const auto er  = gl.viewer.get_view_enabled_range();
+        out["enabled"] = {er[0], er[1]};
         out["visible"] = {vr[0], vr[1]};
         json colors = json::object();
         for (libvgcode::EGCodeExtrusionRole r : gl.viewer.get_extrusion_roles()) {
@@ -405,6 +409,21 @@ JNI(jstring, previewInfo)(JNIEnv *env, jobject)
             colors[std::to_string(slic3r_role)] = {{"color", hex}, {"visible", gl.viewer.is_extrusion_role_visible(r)}};
         }
         out["roles"] = colors;
+    }
+    return env->NewStringUTF(out.dump().c_str());
+}
+
+// The moves slider's state: the top layer's move range and the tool at the current move. GL thread.
+JNI(jstring, previewCurrent)(JNIEnv *env, jobject)
+{
+    json out = json::object();
+    if (gl.preview_loaded) {
+        const auto er = gl.viewer.get_view_enabled_range();
+        const auto vr = gl.viewer.get_view_visible_range();
+        const libvgcode::PathVertex &v = gl.viewer.get_current_vertex();
+        out = {{"enabled", {er[0], er[1]}}, {"visible", {vr[0], vr[1]}},
+               {"x", v.position[0]}, {"y", v.position[1]}, {"z", v.position[2]},
+               {"speed", v.feedrate}, {"line", v.gcode_id}, {"width", v.width}, {"height", v.height}};
     }
     return env->NewStringUTF(out.dump().c_str());
 }

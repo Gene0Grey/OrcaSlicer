@@ -119,6 +119,12 @@ class SceneView(context: Context, val camera: OrbitCamera, private val dark: Boo
 
     fun requestPreviewInfo() { wantPreviewInfo = true; requestRender() }
 
+    /** Runs [block] on the GL thread (where the viewer lives) and hands its result to [done] on the main thread. */
+    fun query(block: () -> String, done: (String) -> Unit) {
+        queueEvent { val r = block(); main.post { done(r) } }
+        requestRender()
+    }
+
     private var lastX = 0f; private var lastY = 0f; private var pointers = 0
     private val scale = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(d: ScaleGestureDetector): Boolean { camera.zoom(d.scaleFactor); requestRender(); return true }

@@ -65,6 +65,8 @@ object OrcaCore {
     external fun previewInfo(): String
     external fun previewSetLayers(low: Int, high: Int)
     external fun previewSetMoves(low: Int, high: Int)
+    /** {enabled:[a,b], visible:[a,b], x, y, z, speed, line}: the moves slider and the tool at the current move. */
+    external fun previewCurrent(): String
     external fun previewSetViewType(type: Int)
     external fun previewToggleRole(role: Int)
     external fun previewToggleTravel()

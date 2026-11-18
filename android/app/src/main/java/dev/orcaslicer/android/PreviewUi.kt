@@ -39,6 +39,12 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import org.json.JSONObject
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.text.font.FontFamily
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
 import kotlin.math.roundToInt
 
 /** Preview data reported by the GL thread after libvgcode loads a slice. */
@@ -146,33 +152,79 @@ fun PreviewSliders(stats: SliceStats?, info: PreviewInfo?, scene: SceneView?, bo
         return
     }
     val layers = info.zs.size
-    var range by remember(info) { mutableStateOf(0f..(layers - 1).coerceAtLeast(0).toFloat()) }
-    var moves by remember(info) { mutableStateOf(info.fullMoves.second.toFloat()) }
+    var range by remember(info.zs) { mutableStateOf(0f..(layers - 1).coerceAtLeast(0).toFloat()) }
+    // The moves slider walks the top visible layer (as on the desktop); it re-ranges when the layer range moves.
+    var move by remember(info) { mutableStateOf<MoveState?>(null) }
+    var dragging by remember { mutableStateOf<Float?>(null) }
+    val refresh: () -> Unit = { scene?.query({ OrcaCore.previewCurrent() }) { move = MoveState.parse(it) } }
+    LaunchedEffect(info) { refresh() }
+    val lines = remember(stats.gcode) { GcodeLines(File(stats.gcode)) }
+    var window by remember { mutableStateOf<List<Pair<Int, String>>>(emptyList()) }
+    LaunchedEffect(move?.line) {
+        val l = move?.line ?: 0
+        window = withContext(Dispatchers.IO) { runCatching { lines.window(l, 2) }.getOrDefault(emptyList()) }
+    }
+
     Box(Modifier.fillMaxSize().padding(bottom = bottomInset)) {
-        if (layers > 1) Column(Modifier.align(Alignment.CenterEnd).fillMaxHeight(0.78f).padding(end = 6.dp, top = 64.dp),
+        if (layers > 1) Column(Modifier.align(Alignment.CenterEnd).fillMaxHeight(0.7f).padding(end = 6.dp, top = 64.dp),
             horizontalAlignment = Alignment.CenterHorizontally) {
             LayerFlap(range.endInclusive.roundToInt(), info.zs)
             RangeSlider(
                 value = range, onValueChange = { r ->
                     range = r
                     scene?.onGl { OrcaCore.previewSetLayers(r.start.roundToInt(), r.endInclusive.roundToInt()) }
+                    refresh()
                 },
                 valueRange = 0f..(layers - 1).toFloat(), modifier = Modifier.weight(1f).vertical(),
                 startThumb = { FlapThumb() }, endThumb = { FlapThumb() }, track = { RuleTrack() },
             )
             LayerFlap(range.start.roundToInt(), info.zs)
         }
-        Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Board.flap.copy(alpha = 0.8f)).padding(start = 12.dp, end = 12.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            Text("MOVES", style = MaterialTheme.typography.labelSmall, color = Board.steelLight)
-            Slider(
-                value = moves, onValueChange = { v ->
-                    moves = v
-                    scene?.onGl { OrcaCore.previewSetMoves(info.fullMoves.first, v.roundToInt()) }
-                },
-                valueRange = info.fullMoves.first.toFloat()..info.fullMoves.second.toFloat().coerceAtLeast(info.fullMoves.first + 1f),
-                thumb = { FlapThumb() }, track = { RuleTrack() }, modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-            )
+        val m = move
+        if (m != null) Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Board.flap.copy(alpha = 0.88f))) {
+            // Tool position at the current move, then the G-code lines around it (current line lit teal).
+            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                FlapCell("X %.2f".format(m.x), Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
+                FlapCell("Y %.2f".format(m.y), Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
+                FlapCell("Z %.2f".format(m.z), Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
+                FlapCell("F %.0f".format(m.speed), Modifier.weight(0.8f), style = MaterialTheme.typography.labelMedium, color = Board.tealText)
+            }
+            window.forEach { (n, text) ->
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("$n", Modifier.width(64.dp), style = MaterialTheme.typography.labelSmall, color = if (n == m.line) Board.amber else Board.steelLight)
+                    Text(text, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        color = if (n == m.line) Board.tealText else Board.steelLight, maxLines = 1)
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                val lo = m.enabled.first.toFloat()
+                val hi = m.enabled.second.toFloat().coerceAtLeast(lo + 1f)
+                Text("MOVES", style = MaterialTheme.typography.labelSmall, color = Board.steelLight)
+                Slider(
+                    value = (dragging ?: m.visibleEnd.toFloat()).coerceIn(lo, hi), onValueChange = { v ->
+                        dragging = v
+                        scene?.onGl { OrcaCore.previewSetMoves(m.enabled.first, v.roundToInt()) }
+                        refresh()
+                    },
+                    onValueChangeFinished = { dragging = null },
+                    valueRange = lo..hi,
+                    thumb = { FlapThumb() }, track = { RuleTrack() }, modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                )
+                Text("${m.visibleEnd - m.enabled.first}", Modifier.width(48.dp), style = MaterialTheme.typography.labelSmall, color = Board.steelLight)
+            }
+        }
+    }
+}
+
+/** Moves slider state from libvgcode: the top layer's move range and the tool at the current move. */
+data class MoveState(val enabled: Pair<Int, Int>, val visibleEnd: Int, val x: Double, val y: Double, val z: Double, val speed: Double, val line: Int) {
+    companion object {
+        fun parse(json: String): MoveState? {
+            val o = JSONObject(json)
+            if (!o.has("enabled")) return null
+            val e = o.getJSONArray("enabled"); val v = o.getJSONArray("visible")
+            return MoveState(e.getInt(0) to e.getInt(1), v.getInt(1), o.getDouble("x"), o.getDouble("y"), o.getDouble("z"),
+                o.getDouble("speed"), o.getInt("line"))
         }
     }
 }
