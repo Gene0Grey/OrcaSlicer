@@ -689,7 +689,12 @@ endif()
 
 # Find the OCCT and related libraries
 set(OpenCASCADE_DIR "${CMAKE_PREFIX_PATH}/lib/cmake/occt")
-find_package(OpenCASCADE REQUIRED)
+if (ANDROID)
+    # The NDK toolchain re-roots package lookups into its sysroot, which misses OpenCASCADE_DIR.
+    find_package(OpenCASCADE REQUIRED PATHS "${OpenCASCADE_DIR}" NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
+else ()
+    find_package(OpenCASCADE REQUIRED)
+endif ()
 target_include_directories(libslic3r SYSTEM PUBLIC ${OpenCASCADE_INCLUDE_DIR})
 
 find_package(JPEG REQUIRED)
