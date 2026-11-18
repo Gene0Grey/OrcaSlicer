@@ -538,3 +538,45 @@ JNI(jstring, gcodePath)(JNIEnv *env, jobject)
     std::lock_guard lock(g_session.mutex);
     return to_j(env, g_session.sliced ? g_session.gcode_path : std::string());
 }
+
+// Per-object setting overrides (the desktop's object settings): keys an object may override,
+// and the overrides of one object.
+JNI(jstring, objectSettingKeys)(JNIEnv *env, jobject)
+{
+    json out = json::array();
+    for (const std::string &k : PrintObjectConfig().keys()) out.push_back(k);
+    for (const std::string &k : PrintRegionConfig().keys()) out.push_back(k);
+    return to_j(env, out.dump());
+}
+
+JNI(jstring, objectValues)(JNIEnv *env, jobject, jint idx)
+{
+    std::lock_guard lock(g_session.mutex);
+    json out = json::object();
+    if (idx >= 0 && size_t(idx) < g_session.model.objects.size()) {
+        const DynamicPrintConfig &c = g_session.model.objects[idx]->config.get();
+        for (const std::string &key : c.keys()) out[key] = c.opt_serialize(key);
+    }
+    return to_j(env, out.dump());
+}
+
+// value == nullptr removes the override.
+JNI(jstring, setObjectValue)(JNIEnv *env, jobject, jint idx, jstring jkey, jstring jvalue)
+{
+    std::lock_guard lock(g_session.mutex);
+    if (idx < 0 || size_t(idx) >= g_session.model.objects.size()) return to_j(env, "No such object");
+    try {
+        ModelObject *obj = g_session.model.objects[idx];
+        const std::string key = jstr(env, jkey);
+        if (jvalue == nullptr) {
+            obj->config.erase(key);
+        } else {
+            ConfigSubstitutionContext ctx(ForwardCompatibilitySubstitutionRule::Disable);
+            obj->config.set_deserialize(key, jstr(env, jvalue), ctx);
+        }
+        model_changed();
+        return nullptr;
+    } catch (const std::exception &e) {
+        return to_j(env, e.what());
+    }
+}

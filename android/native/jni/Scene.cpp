@@ -2,6 +2,7 @@
 // Prepare view, the libvgcode toolpaths in the Preview view. Runs on the GLSurfaceView thread.
 // Camera matrices come from Kotlin (column-major, like android.opengl.Matrix and libvgcode).
 
+#include "Gizmo.hpp"
 #include "Session.hpp"
 
 #include "LibVGCode/LibVGCodeWrapper.hpp"
@@ -253,8 +254,10 @@ JNI(void, glRender)(JNIEnv *env, jobject, jint mode, jfloatArray jview, jfloatAr
     env->GetFloatArrayRegion(jproj, 0, 16, proj);
     env->GetFloatArrayRegion(jbg, 0, 3, bg);
     mul(proj, view, mvp);
+    std::vector<GizmoLines> gizmo;
     {
         std::lock_guard lock(g_session.mutex);
+        if (mode == 0) gizmo = gizmo_geometry();
         if (gl.scene_version != g_session.scene_version) {
             rebuild_scene();
             gl.scene_version = g_session.scene_version;
@@ -308,6 +311,20 @@ JNI(void, glRender)(JNIEnv *env, jobject, jint mode, jfloatArray jview, jfloatAr
         }
         glDisableVertexAttribArray(0);
         glDisableVertexAttribArray(1);
+        // Gizmo handles on top of everything, thick for touch.
+        if (!gizmo.empty()) {
+            glDisable(GL_DEPTH_TEST);
+            glUseProgram(gl.flat.id);
+            glLineWidth(6.f);
+            for (const GizmoLines &g : gizmo) {
+                Mesh m = upload(g.xyz, 3);
+                draw_lines(m, mvp, g.color);
+                release(m);
+            }
+            glLineWidth(1.f);
+            glDisableVertexAttribArray(0);
+            glEnable(GL_DEPTH_TEST);
+        }
     } else if (gl.preview_loaded) {
         libvgcode::Mat4x4 v, p;
         std::copy(view, view + 16, v.begin());

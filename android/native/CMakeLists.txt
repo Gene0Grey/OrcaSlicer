@@ -12,6 +12,7 @@ target_compile_options(libvgcode PRIVATE -Wno-tautological-pointer-compare)
 add_library(orca_core SHARED
     jni/OrcaCore.cpp
     jni/Scene.cpp
+    jni/Gizmo.cpp
     # Desktop's GCodeProcessorResult -> libvgcode conversion, reused as is.
     ${CMAKE_SOURCE_DIR}/src/slic3r/GUI/LibVGCode/LibVGCodeWrapper.cpp
 )
