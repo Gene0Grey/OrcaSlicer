@@ -166,7 +166,8 @@ fun PreviewSliders(stats: SliceStats?, info: PreviewInfo?, scene: SceneView?, bo
     }
 
     Box(Modifier.fillMaxSize().padding(bottom = bottomInset)) {
-        if (layers > 1) Column(Modifier.align(Alignment.CenterEnd).fillMaxHeight(0.7f).padding(end = 6.dp, top = 64.dp),
+        // Above the moves readout (position, G-code lines, slider), which owns the bottom strip.
+        if (layers > 1) Column(Modifier.align(Alignment.TopEnd).fillMaxHeight().padding(end = 6.dp, top = 80.dp, bottom = 236.dp),
             horizontalAlignment = Alignment.CenterHorizontally) {
             LayerFlap(range.endInclusive.roundToInt(), info.zs)
             RangeSlider(
