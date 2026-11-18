@@ -25,7 +25,7 @@ OPENCV_CONFIG=$(find "$PREFIX" -name OpenCVConfig.cmake | awk '{ print length, $
     -DCMAKE_PREFIX_PATH="$PREFIX" \
     -DCMAKE_FIND_ROOT_PATH="$PREFIX" \
     -DOpenCV_DIR="$(dirname "$OPENCV_CONFIG")" \
-    -DSLIC3R_STATIC=ON -DSLIC3R_PCH=OFF -DSLIC3R_CAD=OFF -DSLIC3R_OPENVDB=OFF \
+    -DSLIC3R_STATIC=ON -DSLIC3R_PCH=OFF -DSLIC3R_ENC_CHECK=OFF -DSLIC3R_CAD=OFF -DSLIC3R_OPENVDB=OFF \
     -DBUILD_TESTS="${BUILD_TESTS:-OFF}"
 
 # Low-RAM hosts: big libslic3r translation units need 1-2 GB each.
