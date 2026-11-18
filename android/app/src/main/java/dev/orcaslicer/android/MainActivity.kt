@@ -8,55 +8,35 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AddBox
-import androidx.compose.material.icons.filled.AutoAwesomeMosaic
-import androidx.compose.material.icons.filled.CenterFocusStrong
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Layers
-import androidx.compose.material.icons.filled.OpenWith
-import androidx.compose.material.icons.filled.PhotoSizeSelectSmall
-import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.automirrored.filled.RotateRight
-import androidx.compose.material.icons.automirrored.filled.Undo
-import androidx.compose.material.icons.automirrored.filled.Redo
-import androidx.compose.material.icons.filled.VerticalAlignBottom
 import androidx.compose.material.icons.filled.Print
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.BottomSheetScaffold
-import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
-import androidx.compose.material3.rememberBottomSheetScaffoldState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -66,18 +46,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.File
-
-val OrcaTeal = Color(0xFF009688)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -85,41 +60,48 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val state = AppState(applicationContext)
         setContent {
-            val dark = isSystemInDarkTheme()
-            val scheme = if (dark) darkColorScheme(primary = OrcaTeal, onPrimary = Color.White, secondary = OrcaTeal, secondaryContainer = Color(0xFF00504A), onSecondaryContainer = Color.White)
-                         else lightColorScheme(primary = OrcaTeal, secondary = OrcaTeal, secondaryContainer = Color(0xFFB2DFDB))
-            MaterialTheme(colorScheme = scheme) {
-                Surface(Modifier.fillMaxSize()) { App(state, dark) }
-            }
+            BoardTheme { Surface(Modifier.fillMaxSize(), color = Board.ground) { App(state) } }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun App(state: AppState, dark: Boolean) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val camera = remember { OrbitCamera() }
-    var scene by remember { mutableStateOf<SceneView?>(null) }
-    var preview by remember { mutableStateOf<PreviewInfo?>(null) }
-    var picker by remember { mutableStateOf(false) }
-    var editor by remember { mutableStateOf<Int?>(null) }
-    var transform by remember { mutableStateOf(false) }
+private data class Destination(val screen: Screen, val label: String, val icon: ImageVector)
 
-    LaunchedEffect(Unit) { runCatching { state.start() }.onFailure { state.error = it.message; state.busy = null } }
-    fun fit() {
+private val DESTINATIONS = listOf(
+    Destination(Screen.Home, "Home", Icons.Default.Home),
+    Destination(Screen.Prepare, "Prepare", Icons.Default.ViewInAr),
+    Destination(Screen.Preview, "Preview", Icons.Default.Layers),
+    Destination(Screen.Device, "Device", Icons.Default.Print),
+    Destination(Screen.Project, "Project", Icons.AutoMirrored.Filled.Article),
+)
+
+/** What the plate screens (Prepare / Preview) need from the app shell. */
+class PlateHost(val camera: OrbitCamera) {
+    var scene by mutableStateOf<SceneView?>(null)
+    var preview by mutableStateOf<PreviewInfo?>(null)
+    var openModel: () -> Unit = {}
+    var exportGcode: () -> Unit = {}
+    var shareGcode: () -> Unit = {}
+    var slice: () -> Unit = {}
+    var addPrinter: () -> Unit = {}
+    var editPreset: (Int) -> Unit = {}
+    var exactTransform: () -> Unit = {}
+
+    fun fit(state: AppState) {
         val b = state.presets.bed
         if (b.isNotEmpty()) camera.fit(b.minOf { it.first }.toFloat(), b.minOf { it.second }.toFloat(), b.maxOf { it.first }.toFloat(), b.maxOf { it.second }.toFloat())
         scene?.requestRender()
     }
-    LaunchedEffect(state.presets.bed) { fit() }
-    LaunchedEffect(state.objects, state.presets, state.screen, state.gizmoMode) {
-        scene?.mode = if (state.screen == Screen.Preview) 1 else 0
-        scene?.gizmoMode = state.gizmoMode
-        scene?.requestRender()
-        if (state.screen == Screen.Preview && state.stats != null) scene?.requestPreviewInfo()
-    }
+}
+
+@Composable
+fun App(state: AppState) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var picker by remember { mutableStateOf(false) }
+    var editor by remember { mutableStateOf<Int?>(null) }
+    var transform by remember { mutableStateOf(false) }
+    val host = remember { PlateHost(OrbitCamera()) }
 
     val openModel = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) scope.launch { state.addModel(uri); state.screen = Screen.Prepare }
@@ -130,56 +112,72 @@ fun App(state: AppState, dark: Boolean) {
             context.contentResolver.openOutputStream(uri)?.use { out -> File(path).inputStream().use { it.copyTo(out) } }
         }
     }
-    val slice: () -> Unit = {
+    host.openModel = { openModel.launch(arrayOf("*/*")) }
+    host.exportGcode = { exportGcode.launch("${state.projectName}.gcode") }
+    host.shareGcode = { state.stats?.let { share(context, File(it.gcode)) } }
+    host.addPrinter = { picker = true }
+    host.editPreset = { editor = it }
+    host.exactTransform = { transform = true }
+    host.slice = {
         scope.launch {
-            if (state.slice()) { preview = null; state.screen = Screen.Preview; scene?.mode = 1; scene?.requestPreviewInfo() }
+            if (state.slice()) { host.preview = null; state.screen = Screen.Preview; host.scene?.mode = 1; host.scene?.requestPreviewInfo() }
         }
+    }
+
+    LaunchedEffect(Unit) { runCatching { state.start() }.onFailure { state.error = it.message; state.busy = null } }
+    LaunchedEffect(state.presets.bed) { host.fit(state) }
+    LaunchedEffect(state.objects, state.presets, state.screen, state.gizmoMode) {
+        host.scene?.mode = if (state.screen == Screen.Preview) 1 else 0
+        host.scene?.gizmoMode = state.gizmoMode
+        host.scene?.requestRender()
+        if (state.screen == Screen.Preview && state.stats != null) host.scene?.requestPreviewInfo()
     }
     BackHandler(state.screen != Screen.Home) { state.screen = Screen.Home }
 
-    Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-        TopBar(state, onSlice = slice, onExport = { exportGcode.launch("${state.projectName}.gcode") }, onShare = { state.stats?.let { share(context, File(it.gcode)) } })
-        state.sliceProgress?.let { (p, t) ->
-            LinearProgressIndicator({ p / 100f }, Modifier.fillMaxWidth())
-            Text(t, Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.labelSmall, maxLines = 1)
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val wide = maxWidth >= 840.dp
+        val content: @Composable (Modifier) -> Unit = { m ->
+            Box(m) {
+                when (state.screen) {
+                    Screen.Home -> HomeScreen(state,
+                        onNew = { scope.launch { state.objectOp(4, -1); state.projectName = "Untitled"; state.screen = Screen.Prepare } },
+                        onOpen = host.openModel,
+                        onRecent = { path -> scope.launch { state.addRecent(path); state.screen = Screen.Prepare } })
+                    Screen.Device -> DeviceScreen(state)
+                    Screen.Project -> ProjectScreen(state)
+                    Screen.Prepare, Screen.Preview -> PlateScreen(state, host, wide)
+                }
+                state.busy?.let { BusyBoard(it, Modifier.align(Alignment.Center)) }
+            }
         }
-        Box(Modifier.weight(1f)) {
-            when (state.screen) {
-                Screen.Home -> HomeScreen(state, onNew = { scope.launch { state.objectOp(4, -1); state.projectName = "Untitled"; state.screen = Screen.Prepare } },
-                    onOpen = { openModel.launch(arrayOf("*/*")) },
-                    onRecent = { path -> scope.launch { state.addRecent(path); state.screen = Screen.Prepare } })
-                Screen.Device -> DeviceScreen(state)
-                Screen.Project -> ProjectScreen(state)
-                Screen.Prepare, Screen.Preview -> {
-                    val sheet = rememberBottomSheetScaffoldState()
-                    BottomSheetScaffold(
-                        scaffoldState = sheet,
-                        sheetPeekHeight = if (state.screen == Screen.Prepare) 132.dp else 0.dp,
-                        sheetContent = {
-                            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
-                                Sidebar(state, onAddPrinter = { picker = true }, onEdit = { editor = it })
-                            }
-                        },
-                    ) { inner ->
-                        Box(Modifier.fillMaxSize().padding(inner)) {
-                            AndroidView(factory = { ctx ->
-                                SceneView(ctx, camera, dark).also { v ->
-                                    v.onPick = { idx -> scope.launch { state.select(idx) } }
-                                    v.onFit = ::fit
-                                    v.onPreviewInfo = { preview = PreviewInfo.parse(it) }
-                                    v.onGizmoEnd = { scope.launch { state.afterGizmo() } }
-                                    v.gizmoMode = state.gizmoMode
-                                    v.mode = if (state.screen == Screen.Preview) 1 else 0
-                                    scene = v
-                                }
-                            }, modifier = Modifier.fillMaxSize())
-                            if (state.screen == Screen.Prepare) PrepareToolbar(state, onAdd = { openModel.launch(arrayOf("*/*")) }, onFit = ::fit, onTransform = { transform = true })
-                            else PreviewOverlay(state.stats, preview, scene)
-                        }
+        if (wide) {
+            Row(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+                NavigationRail(containerColor = Board.flap) {
+                    DESTINATIONS.forEach { d ->
+                        NavigationRailItem(
+                            selected = state.screen == d.screen, onClick = { state.screen = d.screen },
+                            icon = { Icon(d.icon, null) }, label = { Text(d.label.uppercase(), style = MaterialTheme.typography.labelSmall) },
+                            colors = NavigationRailItemDefaults.colors(selectedIconColor = Board.flap, indicatorColor = Board.teal,
+                                selectedTextColor = Board.tealText, unselectedIconColor = Board.steelLight, unselectedTextColor = Board.steelLight),
+                        )
+                    }
+                }
+                content(Modifier.weight(1f).fillMaxSize())
+            }
+        } else {
+            Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
+                content(Modifier.weight(1f))
+                NavigationBar(containerColor = Board.flap, tonalElevation = 0.dp) {
+                    DESTINATIONS.forEach { d ->
+                        NavigationBarItem(
+                            selected = state.screen == d.screen, onClick = { state.screen = d.screen },
+                            icon = { Icon(d.icon, null) }, label = { Text(d.label.uppercase(), style = MaterialTheme.typography.labelSmall) },
+                            colors = NavigationBarItemDefaults.colors(selectedIconColor = Board.flap, indicatorColor = Board.teal,
+                                selectedTextColor = Board.tealText, unselectedIconColor = Board.steelLight, unselectedTextColor = Board.steelLight),
+                        )
                     }
                 }
             }
-            state.busy?.let { Surface(Modifier.align(Alignment.Center), tonalElevation = 6.dp, shape = MaterialTheme.shapes.large) { Text(it, Modifier.padding(24.dp)) } }
         }
     }
 
@@ -189,90 +187,17 @@ fun App(state: AppState, dark: Boolean) {
     if (transform && state.selected >= 0) TransformDialog(state) { transform = false }
     state.error?.let { msg ->
         AlertDialog(onDismissRequest = { state.error = null }, confirmButton = { TextButton({ state.error = null }) { Text("OK") } },
-            title = { Text("OrcaSlicer") }, text = { Text(msg) })
+            title = { Text("CAN'T DO THAT", style = MaterialTheme.typography.titleMedium) },
+            text = { Text(msg, style = MaterialTheme.typography.bodyMedium) }, containerColor = Board.frame)
     }
 }
 
+/** Status plate for long operations (loading profiles, models). */
 @Composable
-private fun TopBar(state: AppState, onSlice: () -> Unit, onExport: () -> Unit, onShare: () -> Unit) {
-    Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
-        Column {
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
-                TabButton(Icons.Default.Home, "Home", state.screen == Screen.Home) { state.screen = Screen.Home }
-                TabButton(Icons.Default.ViewInAr, "Prepare", state.screen == Screen.Prepare) { state.screen = Screen.Prepare }
-                TabButton(Icons.Default.Layers, "Preview", state.screen == Screen.Preview) { state.screen = Screen.Preview }
-                TabButton(Icons.Default.Print, "Device", state.screen == Screen.Device) { state.screen = Screen.Device }
-                TabButton(Icons.Default.Description, "Project", state.screen == Screen.Project) { state.screen = Screen.Project }
-            }
-            if (state.screen == Screen.Prepare || state.screen == Screen.Preview) Row(
-                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Button(onSlice, Modifier.weight(1f), enabled = state.objects.isNotEmpty() && state.objects.none { it.outside } && state.sliceProgress == null) { Text("Slice plate") }
-                OutlinedButton(onExport, Modifier.weight(1f), enabled = state.stats != null) { Text("Export G-code") }
-                if (state.stats != null) TextButton(onShare) { Text("Share") }
-            }
-        }
+fun BusyBoard(text: String, modifier: Modifier = Modifier) =
+    Box(modifier.padding(24.dp).steel().padding(16.dp)) {
+        FlapCell(text.uppercase().trimEnd('â€¦', '.'), color = Board.tealText)
     }
-}
-
-@Composable
-private fun TabButton(icon: ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
-    val color = if (selected) OrcaTeal else Color.Transparent
-    Surface(onClick = onClick, color = color, contentColor = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant) {
-        Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null, Modifier.size(20.dp))
-            Text(label, Modifier.padding(start = 6.dp))
-        }
-    }
-}
-
-/** The desktop's plate toolbar, as large touch buttons. */
-@Composable
-private fun PrepareToolbar(state: AppState, onAdd: () -> Unit, onFit: () -> Unit, onTransform: () -> Unit) {
-    val scope = rememberCoroutineScope()
-    val sel = state.selected >= 0
-    Column {
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Tool(Icons.AutoMirrored.Filled.Undo, "Undo", state.canUndo) { scope.launch { state.undo() } }
-        Tool(Icons.AutoMirrored.Filled.Redo, "Redo", state.canRedo) { scope.launch { state.redo() } }
-        Tool(Icons.Default.AddBox, "Add model", true, onAdd)
-        Tool(Icons.Default.AutoAwesomeMosaic, "Arrange", state.objects.isNotEmpty()) { scope.launch { state.objectOp(2) } }
-        Tool(Icons.Default.ScreenRotation, "Auto orient", sel) { scope.launch { state.objectOp(3) } }
-        Toggle(Icons.Default.OpenWith, "Move", sel, state.gizmoMode == 1) { state.setGizmo(1) }
-        Toggle(Icons.AutoMirrored.Filled.RotateRight, "Rotate", sel, state.gizmoMode == 2) { state.setGizmo(2) }
-        Toggle(Icons.Default.PhotoSizeSelectSmall, "Scale", sel, state.gizmoMode == 3) { state.setGizmo(3) }
-        Toggle(Icons.Default.VerticalAlignBottom, "Lay on face", state.objects.isNotEmpty(), state.gizmoMode == 4) { state.setGizmo(4) }
-        Tool(Icons.Default.Tune, "Exact position / rotation / scale", sel, onTransform)
-        Tool(Icons.Default.ContentCopy, "Duplicate", sel) { scope.launch { state.objectOp(1) } }
-        Tool(Icons.Default.Delete, "Delete", sel) { scope.launch { state.objectOp(0) } }
-        Tool(Icons.Default.DeleteSweep, "Clear plate", state.objects.isNotEmpty()) { scope.launch { state.objectOp(4, -1) } }
-        Tool(Icons.Default.CenterFocusStrong, "Fit view", true, onFit)
-    }
-    val hint = when {
-        state.gizmoMode == 4 -> "Tap a face to lay the object on it"
-        state.gizmoMode != 0 && !sel -> "Tap an object to select it"
-        state.gizmoMode == 1 -> "Drag the object to slide it, or an arrow to move along one axis"
-        state.gizmoMode == 2 -> "Drag a ring to rotate (5° steps)"
-        state.gizmoMode == 3 -> "Drag a corner to scale"
-        else -> null
-    }
-    hint?.let { Surface(Modifier.padding(horizontal = 8.dp), shape = MaterialTheme.shapes.small, tonalElevation = 3.dp) { Text(it, Modifier.padding(8.dp), style = MaterialTheme.typography.labelMedium) } }
-    if (state.objects.any { it.outside }) Surface(Modifier.padding(8.dp), shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.errorContainer) {
-        Text("An object is outside the printable area (shown in blue). Move or scale it to slice.", Modifier.padding(8.dp),
-            color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.labelMedium)
-    }
-    }
-}
-
-@Composable
-private fun Toggle(icon: ImageVector, label: String, enabled: Boolean, on: Boolean, onClick: () -> Unit) =
-    FilledTonalIconButton(onClick, enabled = enabled, modifier = Modifier.size(52.dp),
-        colors = if (on) IconButtonDefaults.filledTonalIconButtonColors(containerColor = Color(0xFFFFC107), contentColor = Color.Black)
-                 else IconButtonDefaults.filledTonalIconButtonColors()) { Icon(icon, label) }
-
-@Composable
-private fun Tool(icon: ImageVector, label: String, enabled: Boolean, onClick: () -> Unit) =
-    FilledTonalIconButton(onClick, enabled = enabled, modifier = Modifier.size(52.dp)) { Icon(icon, label) }
 
 fun share(context: android.content.Context, file: File) {
     val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)

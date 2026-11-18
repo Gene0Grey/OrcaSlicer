@@ -1,31 +1,23 @@
 package dev.orcaslicer.android
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Surface
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -36,10 +28,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import org.json.JSONObject
 import kotlin.math.roundToInt
@@ -64,106 +59,125 @@ val VIEW_TYPES = listOf("Summary", "Line Type", "Color Print", "Speed", "Actual 
 
 fun formatTime(seconds: Double): String {
     val s = seconds.roundToInt(); val h = s / 3600; val m = s % 3600 / 60; val sec = s % 60
-    return when { h > 0 -> "${h}h${m}m${sec}s"; m > 0 -> "${m}m${sec}s"; else -> "${sec}s" }
+    return when { h > 0 -> "${h}H ${m}M"; m > 0 -> "${m}M ${sec}S"; else -> "${sec}S" }
+}
+
+private val sliderColors @Composable get() = SliderDefaults.colors(
+    thumbColor = Board.teal, activeTrackColor = Board.teal, inactiveTrackColor = Board.frameHi,
+    activeTickColor = Board.teal, inactiveTickColor = Board.frameHi)
+
+/** The results board: totals that flip into place, colour scheme, and the line-type legend. */
+@Composable
+fun ResultsBoard(state: AppState, info: PreviewInfo?, host: PlateHost) {
+    val stats = state.stats
+    if (stats == null) {
+        BoardHeading("Results")
+        Text("NOTHING SLICED YET. SLICE THE PLATE ON PREPARE.", Modifier.padding(16.dp), style = MaterialTheme.typography.labelMedium, color = Board.steelLight)
+        return
+    }
+    var viewType by remember { mutableIntStateOf(1) }
+    val hidden = remember(info) { mutableStateMapOf<Int, Boolean>() }
+    var travel by remember(info) { mutableStateOf(false) }
+
+    // Peek: the three numbers a hobbyist came for.
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Total("Print time", formatTime(stats.totalTime), Modifier.weight(1.3f))
+        Total("Filament", "%.1f G".format(stats.grams), Modifier.weight(1f))
+        Total("Layers", "${info?.zs?.size ?: "-"}", Modifier.weight(0.8f))
+    }
+    BoardRow("Color scheme") {
+        Dropdown(VIEW_TYPES[viewType].uppercase(), VIEW_TYPES.map { it.uppercase() }, Modifier.weight(1f)) { t ->
+            viewType = t; host.scene?.onGl { OrcaCore.previewSetViewType(t) }
+        }
+    }
+    if (viewType != 1) Text("THE LEGEND BELOW LISTS LINE TYPES; THE PLATE SHOWS ${VIEW_TYPES[viewType].uppercase()}.",
+        Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.labelSmall, color = Board.steelLight)
+    // Legend: the departure table.
+    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 4.dp)) {
+        Head("Line type", 2.2f); Head("Time", 1.1f); Head("%", 0.7f); Head("G", 0.7f); Head("Show", 0.8f)
+    }
+    stats.roles.forEach { r ->
+        LegendRow(r.name, parseHex(info?.roleColors?.get(r.role) ?: "#888888"), formatTime(r.time), "%.1f".format(r.percent), "%.2f".format(r.grams),
+            hidden[r.role] != true) { v -> hidden[r.role] = !v; host.scene?.onGl { OrcaCore.previewToggleRole(r.role) } }
+    }
+    LegendRow("Travel", Board.steelMid, formatTime(stats.travelTime), "", "", travel) { v -> travel = v; host.scene?.onGl { OrcaCore.previewToggleTravel() } }
+    BoardRow("Total filament") { FlapCell("%.2f M   %.2f G".format(stats.meters, stats.grams), Modifier.weight(1f)) }
+    BoardRow("Prepare time") { FlapCell(formatTime(stats.prepareTime.toDouble()), Modifier.weight(1f)) }
+    Box(Modifier.heightIn(min = 24.dp))
 }
 
 @Composable
-fun PreviewOverlay(stats: SliceStats?, info: PreviewInfo?, scene: SceneView?) {
-    if (stats == null || info == null) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(if (stats == null) "Slice the plate to see the preview." else "Loading preview…")
+private fun Total(label: String, value: String, modifier: Modifier) = Column(modifier) {
+    Text(label.uppercase(), style = MaterialTheme.typography.labelSmall, color = Board.steelLight)
+    FlapCell(value, Modifier.fillMaxWidth(), style = MaterialTheme.typography.headlineSmall, color = Board.letter)
+}
+
+@Composable
+private fun RowScope.Head(text: String, w: Float) =
+    Text(text.uppercase(), Modifier.weight(w), style = MaterialTheme.typography.labelSmall, color = Board.steelLight)
+
+@Composable
+private fun LegendRow(name: String, swatch: androidx.compose.ui.graphics.Color, time: String, percent: String, grams: String, shown: Boolean, onToggle: (Boolean) -> Unit) {
+    val dim = if (shown) Board.letter else Board.steelMid
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).drawBehind {
+        drawLine(Board.rule, Offset(0f, size.height - 1), Offset(size.width, size.height - 1), 1.dp.toPx())
+    }.padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.weight(2.2f), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(width = 6.dp, height = 22.dp).background(if (shown) swatch else Board.steelMid))
+            Text(name.uppercase(), Modifier.padding(start = 8.dp), style = MaterialTheme.typography.labelMedium, color = dim, maxLines = 1)
         }
+        Text(time, Modifier.weight(1.1f), style = MaterialTheme.typography.labelMedium, color = dim)
+        Text(percent, Modifier.weight(0.7f), style = MaterialTheme.typography.labelMedium, color = dim)
+        Text(grams, Modifier.weight(0.7f), style = MaterialTheme.typography.labelMedium, color = dim)
+        Box(Modifier.weight(0.8f), contentAlignment = Alignment.CenterStart) {
+            Checkbox(shown, onToggle, colors = CheckboxDefaults.colors(checkedColor = Board.teal, checkmarkColor = Board.flap, uncheckedColor = Board.steelMid))
+        }
+    }
+}
+
+/** Layer range (right edge) and moves within the top layer (bottom), with flap readouts. */
+@Composable
+fun PreviewSliders(stats: SliceStats?, info: PreviewInfo?, scene: SceneView?, bottomInset: Dp) {
+    if (stats == null || info == null) {
+        if (stats != null) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { FlapCell("LOADING PREVIEW", color = Board.tealText) }
         return
     }
     val layers = info.zs.size
     var range by remember(info) { mutableStateOf(0f..(layers - 1).coerceAtLeast(0).toFloat()) }
     var moves by remember(info) { mutableStateOf(info.fullMoves.second.toFloat()) }
-    var viewType by remember { mutableIntStateOf(1) }
-    var legendOpen by remember { mutableStateOf(true) }
-    val hidden = remember(info) { mutableStateMapOf<Int, Boolean>() }
-    var travel by remember(info) { mutableStateOf(false) }
-
-    Box(Modifier.fillMaxSize()) {
-        // Legend (desktop's top-right table), collapsible.
-        Surface(
-            Modifier.align(Alignment.TopStart).padding(8.dp).widthIn(max = 360.dp).heightIn(max = 440.dp),
-            shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f), tonalElevation = 3.dp,
-        ) {
-            Column(Modifier.padding(10.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Color scheme", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
-                    Dropdown(VIEW_TYPES[viewType], VIEW_TYPES, Modifier.padding(start = 8.dp).weight(1f)) { t ->
-                        viewType = t; scene?.onGl { OrcaCore.previewSetViewType(t) }
-                    }
-                    IconButton({ legendOpen = !legendOpen }) { Icon(if (legendOpen) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, "Toggle legend") }
-                }
-                if (legendOpen) Column(Modifier.verticalScroll(rememberScrollState()).weight(1f, fill = false)) {
-                    Row { Cell("Line Type", 2f, true); Cell("Time", 1.2f, true); Cell("%", 0.8f, true); Cell("g", 0.8f, true); Cell("", 0.6f, true) }
-                    stats.roles.forEach { r ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Row(Modifier.weight(2f), verticalAlignment = Alignment.CenterVertically) {
-                                Box(Modifier.size(10.dp).background(parseHex(info.roleColors[r.role] ?: "#888888")))
-                                Text(r.name, Modifier.padding(start = 6.dp), style = MaterialTheme.typography.bodySmall, maxLines = 1)
-                            }
-                            Cell(formatTime(r.time), 1.2f); Cell("%.1f%%".format(r.percent), 0.8f); Cell("%.2f".format(r.grams), 0.8f)
-                            Checkbox(hidden[r.role] != true, { v -> hidden[r.role] = !v; scene?.onGl { OrcaCore.previewToggleRole(r.role) } }, Modifier.weight(0.6f).size(36.dp))
-                        }
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Travel", Modifier.weight(2f).padding(start = 16.dp), style = MaterialTheme.typography.bodySmall)
-                        Cell(formatTime(stats.travelTime), 1.2f); Cell("", 0.8f); Cell("", 0.8f)
-                        Checkbox(travel, { v -> travel = v; scene?.onGl { OrcaCore.previewToggleTravel() } }, Modifier.weight(0.6f).size(36.dp))
-                    }
-                    HorizontalDivider(Modifier.padding(vertical = 6.dp))
-                    Text("Total estimation", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
-                    Total("Total filament", "%.2f m   %.2f g".format(stats.meters, stats.grams))
-                    Total("Prepare time", formatTime(stats.prepareTime.toDouble()))
-                    Total("Total time", formatTime(stats.totalTime))
-                }
-            }
-        }
-
-        // Layer range (desktop's vertical slider on the right).
-        if (layers > 1) Column(Modifier.align(Alignment.CenterEnd).fillMaxHeight(0.62f).padding(end = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            LayerLabel(range.endInclusive.roundToInt(), info.zs)
+    Box(Modifier.fillMaxSize().padding(bottom = bottomInset)) {
+        if (layers > 1) Column(Modifier.align(Alignment.CenterEnd).fillMaxHeight(0.78f).padding(end = 6.dp, top = 64.dp),
+            horizontalAlignment = Alignment.CenterHorizontally) {
+            LayerFlap(range.endInclusive.roundToInt(), info.zs)
             RangeSlider(
                 value = range, onValueChange = { r ->
                     range = r
                     scene?.onGl { OrcaCore.previewSetLayers(r.start.roundToInt(), r.endInclusive.roundToInt()) }
                 },
-                valueRange = 0f..(layers - 1).toFloat(), modifier = Modifier.weight(1f).vertical(),
+                valueRange = 0f..(layers - 1).toFloat(), colors = sliderColors, modifier = Modifier.weight(1f).vertical(),
             )
-            LayerLabel(range.start.roundToInt(), info.zs)
+            LayerFlap(range.start.roundToInt(), info.zs)
         }
-
-        // Moves within the top layer (desktop's horizontal slider at the bottom).
-        Slider(
-            value = moves, onValueChange = { v ->
-                moves = v
-                scene?.onGl { OrcaCore.previewSetMoves(info.fullMoves.first, v.roundToInt()) }
-            },
-            valueRange = info.fullMoves.first.toFloat()..info.fullMoves.second.toFloat().coerceAtLeast(info.fullMoves.first + 1f),
-            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(start = 16.dp, end = 72.dp, bottom = 8.dp),
-        )
+        Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Board.flap.copy(alpha = 0.8f)).padding(start = 12.dp, end = 12.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Text("MOVES", style = MaterialTheme.typography.labelSmall, color = Board.steelLight)
+            Slider(
+                value = moves, onValueChange = { v ->
+                    moves = v
+                    scene?.onGl { OrcaCore.previewSetMoves(info.fullMoves.first, v.roundToInt()) }
+                },
+                valueRange = info.fullMoves.first.toFloat()..info.fullMoves.second.toFloat().coerceAtLeast(info.fullMoves.first + 1f),
+                colors = sliderColors, modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+            )
+        }
     }
 }
 
 @Composable
-private fun androidx.compose.foundation.layout.RowScope.Cell(text: String, weight: Float, header: Boolean = false) =
-    Text(text, Modifier.weight(weight), style = MaterialTheme.typography.bodySmall, fontWeight = if (header) FontWeight.Bold else null, maxLines = 1)
-
-@Composable
-private fun Total(label: String, value: String) = Row(Modifier.fillMaxWidth()) {
-    Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-    Text(value, style = MaterialTheme.typography.bodySmall)
-}
-
-@Composable
-private fun LayerLabel(layer: Int, zs: List<Float>) = Surface(shape = RoundedCornerShape(6.dp), tonalElevation = 3.dp) {
-    Column(Modifier.padding(horizontal = 6.dp, vertical = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("${layer + 1}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-        Text("%.2f".format(zs.getOrElse(layer) { 0f }), style = MaterialTheme.typography.labelSmall)
-    }
+private fun LayerFlap(layer: Int, zs: List<Float>) = Column(Modifier.flap(Board.frameHi).padding(horizontal = 8.dp, vertical = 4.dp),
+    horizontalAlignment = Alignment.CenterHorizontally) {
+    FlapText("${layer + 1}".padStart(3), style = MaterialTheme.typography.titleMedium)
+    FlapText("%.2f".format(zs.getOrElse(layer) { 0f }), style = MaterialTheme.typography.labelSmall, color = Board.steelLight)
 }
 
 /** Rotates a horizontal control to vertical (bottom = start), swapping its measured size. */

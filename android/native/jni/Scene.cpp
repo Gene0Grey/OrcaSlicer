@@ -175,10 +175,10 @@ void rebuild_scene()
             }
         gl.objects.push_back(upload(data, 6));
         auto rgba = parse_color(col);
-        if (g_session.outside(*o))          // outside the build volume: the desktop's blue warning tint
-            rgba = {0.30f, 0.55f, 0.95f, 1.f};
-        else if (int(oi) == g_session.selected)  // desktop selection tint
-            rgba = {std::min(1.f, rgba[0] * 0.5f + 0.5f), std::min(1.f, rgba[1] * 0.5f + 0.35f), rgba[2] * 0.5f, 1.f};
+        if (g_session.outside(*o))          // off the plate: board "cancelled" red
+            rgba = {0.90f, 0.28f, 0.30f, 1.f};
+        else if (int(oi) == g_session.selected)  // picked: half way to Orca teal, lifted
+            rgba = {rgba[0] * 0.5f + 0.06f, rgba[1] * 0.5f + 0.38f, rgba[2] * 0.5f + 0.34f, 1.f};
         gl.object_colors.insert(gl.object_colors.end(), rgba.begin(), rgba.end());
     }
 }
@@ -280,15 +280,16 @@ JNI(void, glRender)(JNIEnv *env, jobject, jint mode, jfloatArray jview, jfloatAr
     glUseProgram(gl.flat.id);
     if (gl.bed_fill.count) {
         glUniformMatrix4fv(gl.flat.mvp, 1, GL_FALSE, mvp);
-        const std::array<float, 4> fill{0.30f, 0.30f, 0.31f, 1.f};
+        const std::array<float, 4> fill{0.165f, 0.176f, 0.192f, 1.f}; // brushed steel
         glUniform4fv(gl.flat.color, 1, fill.data());
         glBindBuffer(GL_ARRAY_BUFFER, gl.bed_fill.vbo);
         glEnableVertexAttribArray(0);
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
         glDrawArrays(GL_TRIANGLES, 0, gl.bed_fill.count);
     }
-    draw_lines(gl.bed_grid, mvp, {0.45f, 0.45f, 0.46f, 1.f});
-    draw_lines(gl.bed_border, mvp, {0.0f, 0.68f, 0.62f, 1.f});
+    draw_lines(gl.bed_grid, mvp, {0.26f, 0.28f, 0.30f, 1.f});
+    glLineWidth(3.f);
+    draw_lines(gl.bed_border, mvp, {0.0f, 0.59f, 0.53f, 1.f}); // Orca teal plate edge
     glLineWidth(3.f);
     draw_lines(gl.axes[0], mvp, {0.85f, 0.15f, 0.15f, 1.f});
     draw_lines(gl.axes[1], mvp, {0.15f, 0.75f, 0.15f, 1.f});

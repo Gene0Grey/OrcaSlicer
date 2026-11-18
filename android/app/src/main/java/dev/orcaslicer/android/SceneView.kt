@@ -28,7 +28,7 @@ class OrbitCamera {
 
     fun fit(minX: Float, minY: Float, maxX: Float, maxY: Float, height: Float = 0f) {
         tx = (minX + maxX) / 2; ty = (minY + maxY) / 2; tz = height / 3
-        // Keep the whole plate in view: on a portrait screen the width is the limit (fov 35°: 2*tan = 0.63).
+        // Keep the whole plate in view: on a portrait screen the width is the limit (fov 35Â°: 2*tan = 0.63).
         val size = max(maxX - minX, maxY - minY)
         distance = size * 1.15f / (0.63f * aspect.coerceAtMost(1f)) + 20f
         azimuth = -90f; elevation = 35f
@@ -88,7 +88,8 @@ class SceneView(context: Context, val camera: OrbitCamera, private val dark: Boo
         }
         override fun onDrawFrame(gl: GL10?) {
             camera.update(width, height)
-            val bg = if (dark) floatArrayOf(0.17f, 0.17f, 0.18f) else floatArrayOf(0.90f, 0.90f, 0.91f)
+            // Board flap black behind the plate.
+            val bg = if (dark) floatArrayOf(0.043f, 0.051f, 0.051f) else floatArrayOf(0.90f, 0.90f, 0.91f)
             OrcaCore.glRender(mode, camera.view, camera.proj, bg)
             if (wantPreviewInfo && mode == 1) {
                 wantPreviewInfo = false
