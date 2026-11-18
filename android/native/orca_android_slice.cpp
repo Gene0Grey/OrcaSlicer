@@ -9,6 +9,13 @@
 //                           --filament F.json --output OUT.gcode MODEL...
 // stdout: "PROGRESS <percent> <text>" lines while slicing; errors on stderr; exit 0 on success.
 
+// libslic3r references the header-only nanosvg; executables provide the implementation, before any
+// libslic3r header pulls nanosvg.h in without it (same as OrcaSlicer_profile_validator.cpp).
+#define NANOSVG_IMPLEMENTATION
+#include "nanosvg/nanosvg.h"
+#define NANOSVGRAST_IMPLEMENTATION
+#include "nanosvg/nanosvgrast.h"
+
 #include "libslic3r/libslic3r.h"
 #include "libslic3r/Model.hpp"
 #include "libslic3r/ModelArrange.hpp"
