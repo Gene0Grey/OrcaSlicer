@@ -1,42 +1,57 @@
 package dev.orcaslicer.android
 
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
-import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddBox
+import androidx.compose.material.icons.filled.AutoAwesomeMosaic
+import androidx.compose.material.icons.filled.CenterFocusStrong
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.OpenWith
+import androidx.compose.material.icons.filled.Print
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.ScreenRotation
+import androidx.compose.material.icons.filled.ViewInAr
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.rememberBottomSheetScaffoldState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,222 +60,185 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import kotlin.math.roundToInt
 
-private val OrcaGreen = Color(0xFF009688)
+val OrcaTeal = Color(0xFF009688)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        val slicer = Slicer(applicationContext)
+        val state = AppState(applicationContext)
         setContent {
-            MaterialTheme(
-                colorScheme = darkColorScheme(
-                    primary = OrcaGreen, secondary = OrcaGreen,
-                    secondaryContainer = Color(0xFF00504A), onSecondaryContainer = Color.White,
-                ),
-            ) {
-                Surface(Modifier.fillMaxSize()) { SliceScreen(slicer) }
+            val dark = isSystemInDarkTheme()
+            val scheme = if (dark) darkColorScheme(primary = OrcaTeal, secondary = OrcaTeal, secondaryContainer = Color(0xFF00504A), onSecondaryContainer = Color.White)
+                         else lightColorScheme(primary = OrcaTeal, secondary = OrcaTeal, secondaryContainer = Color(0xFFB2DFDB))
+            MaterialTheme(colorScheme = scheme) {
+                Surface(Modifier.fillMaxSize()) { App(state, dark) }
             }
         }
     }
 }
 
-private sealed interface SliceState {
-    data object Idle : SliceState
-    data class Running(val lastLine: String) : SliceState
-    data class Done(val result: SliceResult) : SliceState
-    data class Failed(val message: String) : SliceState
-}
-
-private val PRINTERS = listOf(
-    PrinterSettings("Generic 220x220", 220, 220, 250),
-    PrinterSettings("Generic 235x235", 235, 235, 250),
-    PrinterSettings("Generic 256x256", 256, 256, 256),
-    PrinterSettings("Klipper 300x300", 300, 300, 300, flavor = "klipper"),
-)
-private val FILAMENTS = listOf(
-    FilamentSettings("PLA", 210, 60, 1.24f), FilamentSettings("PETG", 240, 75, 1.27f),
-    FilamentSettings("ABS", 250, 100, 1.04f), FilamentSettings("TPU", 225, 40, 1.21f),
-)
-
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SliceScreen(slicer: Slicer) {
-    val context = androidx.compose.ui.platform.LocalContext.current
+fun App(state: AppState, dark: Boolean) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var model by remember { mutableStateOf<File?>(null) }
-    var printer by remember { mutableStateOf(PRINTERS[0]) }
-    var print by remember { mutableStateOf(PrintSettings()) }
-    var filament by remember { mutableStateOf(FILAMENTS[0]) }
-    var state by remember { mutableStateOf<SliceState>(SliceState.Idle) }
+    val camera = remember { OrbitCamera() }
+    var scene by remember { mutableStateOf<SceneView?>(null) }
+    var preview by remember { mutableStateOf<PreviewInfo?>(null) }
+    var picker by remember { mutableStateOf(false) }
+    var editor by remember { mutableStateOf<Int?>(null) }
+    var transform by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) { runCatching { state.start() }.onFailure { state.error = it.message; state.busy = null } }
+    fun fit() {
+        val b = state.presets.bed
+        if (b.isNotEmpty()) camera.fit(b.minOf { it.first }.toFloat(), b.minOf { it.second }.toFloat(), b.maxOf { it.first }.toFloat(), b.maxOf { it.second }.toFloat())
+        scene?.requestRender()
+    }
+    LaunchedEffect(state.presets.bed) { fit() }
+    LaunchedEffect(state.objects, state.presets, state.screen) {
+        scene?.mode = if (state.screen == Screen.Preview) 1 else 0
+        scene?.requestRender()
+        if (state.screen == Screen.Preview && state.stats != null) scene?.requestPreviewInfo()
+    }
 
     val openModel = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) scope.launch { model = withContext(Dispatchers.IO) { copyToCache(context, uri) }; state = SliceState.Idle }
+        if (uri != null) scope.launch { state.addModel(uri); state.screen = Screen.Prepare }
     }
-    val saveGcode = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/x.gcode")) { uri ->
-        val done = state as? SliceState.Done ?: return@rememberLauncherForActivityResult
+    val exportGcode = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/x.gcode")) { uri ->
+        val path = state.stats?.gcode ?: return@rememberLauncherForActivityResult
         if (uri != null) scope.launch(Dispatchers.IO) {
-            context.contentResolver.openOutputStream(uri)?.use { out -> done.result.gcode.inputStream().use { it.copyTo(out) } }
+            context.contentResolver.openOutputStream(uri)?.use { out -> File(path).inputStream().use { it.copyTo(out) } }
         }
     }
+    val slice: () -> Unit = {
+        scope.launch {
+            if (state.slice()) { preview = null; state.screen = Screen.Preview; scene?.mode = 1; scene?.requestPreviewInfo() }
+        }
+    }
+    BackHandler(state.screen != Screen.Home) { state.screen = Screen.Home }
 
     Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-        Column(
-            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text("OrcaSlicer", style = MaterialTheme.typography.headlineMedium)
-
-            Section("Model") {
-                Text(model?.name ?: "No model loaded", style = MaterialTheme.typography.bodyLarge)
-                FilledTonalButton(onClick = { openModel.launch(arrayOf("*/*")) }, Modifier.fillMaxWidth().height(52.dp)) {
-                    Text(if (model == null) "Open STL / 3MF / OBJ / STEP" else "Choose another model")
-                }
-            }
-
-            Section("Printer") {
-                Chips(PRINTERS, printer, { it.name }) { printer = it.copy(nozzle = printer.nozzle) }
-                Text("Nozzle", style = MaterialTheme.typography.labelLarge)
-                Chips(listOf(0.2f, 0.4f, 0.6f, 0.8f), printer.nozzle, { "$it mm" }) { printer = printer.copy(nozzle = it) }
-            }
-
-            Section("Quality") {
-                Text("Layer height", style = MaterialTheme.typography.labelLarge)
-                Chips(listOf(0.08f, 0.12f, 0.16f, 0.20f, 0.24f, 0.28f), print.layerHeight, { "%.2f".format(it) }) {
-                    print = print.copy(layerHeight = it)
-                }
-                Stepper("Walls", print.walls, 1..10) { print = print.copy(walls = it) }
-                Text("Infill ${print.infill}%", style = MaterialTheme.typography.labelLarge)
-                Slider(
-                    value = print.infill.toFloat(), onValueChange = { print = print.copy(infill = (it / 5).roundToInt() * 5) },
-                    valueRange = 0f..100f, steps = 19,
-                )
-                Toggle("Supports (tree)", print.supports) { print = print.copy(supports = it) }
-                Toggle("Brim", print.brim) { print = print.copy(brim = it) }
-            }
-
-            Section("Filament") {
-                Chips(FILAMENTS, filament, { it.type }) { filament = it }
-                Stepper("Nozzle °C", filament.nozzleTemp, 150..320, step = 5) { filament = filament.copy(nozzleTemp = it) }
-                Stepper("Bed °C", filament.bedTemp, 0..120, step = 5) { filament = filament.copy(bedTemp = it) }
-            }
-
-            when (val s = state) {
-                is SliceState.Done -> Section("Result") {
-                    Stat("Print time", s.result.time ?: "–")
-                    Stat("Filament", s.result.filamentGrams?.let { "$it g" } ?: "–")
-                    Stat("Layers", s.result.layers ?: "–")
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedButton(onClick = { saveGcode.launch(s.result.gcode.name) }, Modifier.weight(1f).height(52.dp)) { Text("Save G-code") }
-                        OutlinedButton(onClick = { share(context, s.result.gcode) }, Modifier.weight(1f).height(52.dp)) { Text("Share") }
-                    }
-                }
-                is SliceState.Failed -> Section("Error") {
-                    Text(s.message, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
-                }
-                else -> {}
-            }
+        TopBar(state, onSlice = slice, onExport = { exportGcode.launch("${state.projectName}.gcode") }, onShare = { state.stats?.let { share(context, File(it.gcode)) } })
+        state.sliceProgress?.let { (p, t) ->
+            LinearProgressIndicator({ p / 100f }, Modifier.fillMaxWidth())
+            Text(t, Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.labelSmall, maxLines = 1)
         }
-
-        Column(Modifier.padding(16.dp)) {
-            val running = state as? SliceState.Running
-            if (running != null) {
-                LinearProgressIndicator(Modifier.fillMaxWidth())
-                Text(running.lastLine, maxLines = 1, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = 6.dp))
-            }
-            Button(
-                onClick = {
-                    val m = model ?: return@Button
-                    state = SliceState.Running("Starting…")
-                    scope.launch {
-                        state = try {
-                            SliceState.Done(slicer.slice(m, printer, print, filament) { line ->
-                                if (line.isNotBlank()) scope.launch { if (state is SliceState.Running) state = SliceState.Running(line.trim().removePrefix("PROGRESS ")) }
-                            })
-                        } catch (e: Exception) {
-                            SliceState.Failed(e.message ?: e.toString())
+        Box(Modifier.weight(1f)) {
+            when (state.screen) {
+                Screen.Home -> HomeScreen(state, onNew = { scope.launch { state.objectOp(4, -1); state.projectName = "Untitled"; state.screen = Screen.Prepare } },
+                    onOpen = { openModel.launch(arrayOf("*/*")) },
+                    onRecent = { path -> scope.launch { state.addRecent(path); state.screen = Screen.Prepare } })
+                Screen.Device -> DeviceScreen(state)
+                Screen.Project -> ProjectScreen(state)
+                Screen.Prepare, Screen.Preview -> {
+                    val sheet = rememberBottomSheetScaffoldState()
+                    BottomSheetScaffold(
+                        scaffoldState = sheet,
+                        sheetPeekHeight = if (state.screen == Screen.Prepare) 132.dp else 0.dp,
+                        sheetContent = {
+                            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                                Sidebar(state, onAddPrinter = { picker = true }, onEdit = { editor = it })
+                            }
+                        },
+                    ) { inner ->
+                        Box(Modifier.fillMaxSize().padding(inner)) {
+                            AndroidView(factory = { ctx ->
+                                SceneView(ctx, camera, dark).also { v ->
+                                    v.onPick = { idx -> scope.launch { state.select(idx) } }
+                                    v.onFit = ::fit
+                                    v.onPreviewInfo = { preview = PreviewInfo.parse(it) }
+                                    v.mode = if (state.screen == Screen.Preview) 1 else 0
+                                    scene = v
+                                }
+                            }, modifier = Modifier.fillMaxSize())
+                            if (state.screen == Screen.Prepare) PrepareToolbar(state, onAdd = { openModel.launch(arrayOf("*/*")) }, onFit = ::fit, onTransform = { transform = true })
+                            else PreviewOverlay(state.stats, preview, scene)
                         }
                     }
-                },
-                enabled = model != null && running == null,
-                modifier = Modifier.fillMaxWidth().height(60.dp),
-            ) { Text("Slice", style = MaterialTheme.typography.titleMedium) }
+                }
+            }
+            state.busy?.let { Surface(Modifier.align(Alignment.Center), tonalElevation = 6.dp, shape = MaterialTheme.shapes.large) { Text(it, Modifier.padding(24.dp)) } }
+        }
+    }
+
+    if (state.presets.printer.isEmpty() && state.busy == null && state.error == null) picker = true
+    if (picker) PrinterPicker(state) { picker = false }
+    editor?.let { PresetEditorDialog(state, it) { editor = null } }
+    if (transform && state.selected >= 0) TransformDialog(state) { transform = false }
+    state.error?.let { msg ->
+        AlertDialog(onDismissRequest = { state.error = null }, confirmButton = { TextButton({ state.error = null }) { Text("OK") } },
+            title = { Text("OrcaSlicer") }, text = { Text(msg) })
+    }
+}
+
+@Composable
+private fun TopBar(state: AppState, onSlice: () -> Unit, onExport: () -> Unit, onShare: () -> Unit) {
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
+        Column {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                TabButton(Icons.Default.Home, "Home", state.screen == Screen.Home) { state.screen = Screen.Home }
+                TabButton(Icons.Default.ViewInAr, "Prepare", state.screen == Screen.Prepare) { state.screen = Screen.Prepare }
+                TabButton(Icons.Default.Layers, "Preview", state.screen == Screen.Preview) { state.screen = Screen.Preview }
+                TabButton(Icons.Default.Print, "Device", state.screen == Screen.Device) { state.screen = Screen.Device }
+                TabButton(Icons.Default.Description, "Project", state.screen == Screen.Project) { state.screen = Screen.Project }
+            }
+            if (state.screen == Screen.Prepare || state.screen == Screen.Preview) Row(
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Button(onSlice, Modifier.weight(1f), enabled = state.objects.isNotEmpty() && state.sliceProgress == null) { Text("Slice plate") }
+                OutlinedButton(onExport, Modifier.weight(1f), enabled = state.stats != null) { Text("Export G-code") }
+                if (state.stats != null) TextButton(onShare) { Text("Share") }
+            }
         }
     }
 }
 
 @Composable
-private fun Section(title: String, content: @Composable () -> Unit) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-            content()
+private fun TabButton(icon: ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
+    val color = if (selected) OrcaTeal else Color.Transparent
+    Surface(onClick = onClick, color = color, contentColor = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant) {
+        Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, Modifier.size(20.dp))
+            Text(label, Modifier.padding(start = 6.dp))
         }
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+/** The desktop's plate toolbar, as large touch buttons. */
 @Composable
-private fun <T> Chips(options: List<T>, selected: T, label: (T) -> String, onSelect: (T) -> Unit) {
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        options.forEach { o ->
-            FilterChip(selected = o == selected, onClick = { onSelect(o) }, label = { Text(label(o)) }, modifier = Modifier.height(44.dp))
-        }
-    }
-}
-
-@Composable
-private fun Stepper(label: String, value: Int, range: IntRange, step: Int = 1, onChange: (Int) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-        OutlinedButton(onClick = { onChange((value - step).coerceIn(range)) }, Modifier.size(52.dp)) { Text("−") }
-        Text("$value", Modifier.width(56.dp), style = MaterialTheme.typography.titleMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-        OutlinedButton(onClick = { onChange((value + step).coerceIn(range)) }, Modifier.size(52.dp)) { Text("+") }
+private fun PrepareToolbar(state: AppState, onAdd: () -> Unit, onFit: () -> Unit, onTransform: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    val sel = state.selected >= 0
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Tool(Icons.Default.AddBox, "Add model", true, onAdd)
+        Tool(Icons.Default.AutoAwesomeMosaic, "Arrange", state.objects.isNotEmpty()) { scope.launch { state.objectOp(2) } }
+        Tool(Icons.Default.ScreenRotation, "Auto orient", sel) { scope.launch { state.objectOp(3) } }
+        Tool(Icons.Default.OpenWith, "Move / rotate / scale", sel, onTransform)
+        Tool(Icons.Default.ContentCopy, "Duplicate", sel) { scope.launch { state.objectOp(1) } }
+        Tool(Icons.Default.Delete, "Delete", sel) { scope.launch { state.objectOp(0) } }
+        Tool(Icons.Default.DeleteSweep, "Clear plate", state.objects.isNotEmpty()) { scope.launch { state.objectOp(4, -1) } }
+        Tool(Icons.Default.CenterFocusStrong, "Fit view", true, onFit)
     }
 }
 
 @Composable
-private fun Toggle(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-        Switch(checked = checked, onCheckedChange = onChange)
-    }
-}
+private fun Tool(icon: ImageVector, label: String, enabled: Boolean, onClick: () -> Unit) =
+    FilledTonalIconButton(onClick, enabled = enabled, modifier = Modifier.size(52.dp)) { Icon(icon, label) }
 
-@Composable
-private fun Stat(label: String, value: String) {
-    Row(Modifier.fillMaxWidth()) {
-        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-        Text(value, style = MaterialTheme.typography.titleMedium)
-    }
-    Spacer(Modifier.height(2.dp))
-}
-
-private fun copyToCache(context: android.content.Context, uri: Uri): File {
-    var name = "model.stl"
-    context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
-        if (c.moveToFirst()) name = c.getString(0) ?: name
-    }
-    // Keep only a safe file name; the extension tells the slicer the format.
-    name = name.replace(Regex("[^A-Za-z0-9._-]"), "_")
-    val dir = File(context.cacheDir, "models").apply { deleteRecursively(); mkdirs() }
-    val dest = File(dir, name)
-    context.contentResolver.openInputStream(uri)!!.use { input -> dest.outputStream().use { input.copyTo(it) } }
-    return dest
-}
-
-private fun share(context: android.content.Context, file: File) {
+fun share(context: android.content.Context, file: File) {
     val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
-    val intent = Intent(Intent.ACTION_SEND).setType("text/x.gcode").putExtra(Intent.EXTRA_STREAM, uri)
-        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    val intent = Intent(Intent.ACTION_SEND).setType("text/x.gcode").putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     context.startActivity(Intent.createChooser(intent, "Share G-code"))
 }

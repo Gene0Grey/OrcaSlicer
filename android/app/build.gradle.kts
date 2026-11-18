@@ -37,12 +37,14 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.12.4")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.material:material-icons-extended")
 }
 
-// Slicer resources the native driver reads at runtime, copied from the repo's resources/ tree.
-// ponytail: only info/ for now; add profiles/ here when the app offers system presets.
-val copyOrcaResources by tasks.registering(Copy::class) {
-    from(rootProject.file("../resources")) { include("info/**") }
-    into(layout.projectDirectory.dir("src/main/assets/orca/resources"))
+// Slicer resources liborca_core reads at runtime (system profiles, printer info), zipped from the
+// repo's resources/ tree; AppState unzips it once per install.
+val zipOrcaResources by tasks.registering(Zip::class) {
+    from(rootProject.file("../resources")) { include("info/**", "profiles/**") }
+    archiveFileName.set("orca-resources.zip")
+    destinationDirectory.set(layout.projectDirectory.dir("src/main/assets"))
 }
-tasks.named("preBuild") { dependsOn(copyOrcaResources) }
+tasks.named("preBuild") { dependsOn(zipOrcaResources) }
