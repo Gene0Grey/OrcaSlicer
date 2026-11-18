@@ -59,7 +59,16 @@ jobs:
           path: ${{ env.ORCA_ANDROID_OUT }}/prefix-arm64-v8a
           key: ${{ steps.deps-cache.outputs.cache-primary-key }}
 
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: android-core-${{ env.ORCA_ABI }}
+          max-size: 2G
+
       - name: Build libslic3r + Android slicer
+        env:
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
         run: bash android/scripts/build_core.sh "$ORCA_ABI" orca_android_slice
 
       - name: List installed package configs
