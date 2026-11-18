@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Cross-compile libslic3r and the Android slicer driver (android/native).
+# Cross-compile libslic3r and the app's JNI library liborca_core.so (android/native).
 # Needs the deps prefix from build_deps.sh. Usage: build_core.sh [abi] [targets...]
 set -euo pipefail
 
 ABI=${1:-arm64-v8a}; shift || true
-TARGETS=("${@:-orca_android_slice}")
+TARGETS=("${@:-orca_core}")
 API=${ANDROID_API:-29}
 TOOLS=${ANDROID_TOOLS:-$HOME/android-tools}
 NDK=${ANDROID_NDK:-$TOOLS/android-ndk-r29}

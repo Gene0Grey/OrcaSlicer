@@ -65,11 +65,11 @@ jobs:
           key: android-core-${{ env.ORCA_ABI }}
           max-size: 2G
 
-      - name: Build libslic3r + Android slicer
+      - name: Build libslic3r + liborca_core
         env:
           CMAKE_C_COMPILER_LAUNCHER: ccache
           CMAKE_CXX_COMPILER_LAUNCHER: ccache
-        run: bash android/scripts/build_core.sh "$ORCA_ABI" orca_android_slice
+        run: bash android/scripts/build_core.sh "$ORCA_ABI" orca_core
 
       - name: List installed package configs
         if: failure()
@@ -77,13 +77,11 @@ jobs:
 
       - name: Package native libs into the app
         run: |
-          BIN=$(find "$ORCA_ANDROID_OUT/core-$ORCA_ABI" -name orca_android_slice -type f | head -1)
+          LIB=$(find "$ORCA_ANDROID_OUT/core-$ORCA_ABI" -name liborca_core.so -type f | head -1)
           NDK="$ANDROID_TOOLS/android-ndk-r29"
-          STRIP="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
           LIBS=android/app/src/main/jniLibs/$ORCA_ABI
           mkdir -p "$LIBS"
-          # Named lib*.so so Android extracts it to the executable native lib dir.
-          "$STRIP" -o "$LIBS/liborcaslicer_cli.so" "$BIN"
+          "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" -o "$LIBS/liborca_core.so" "$LIB"
           cp "$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so" "$LIBS/"
           ls -la "$LIBS"
 
