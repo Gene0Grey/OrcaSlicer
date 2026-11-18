@@ -688,7 +688,9 @@ if (WIN32)
 endif()
 
 # Find the OCCT and related libraries
-set(OpenCASCADE_DIR "${CMAKE_PREFIX_PATH}/lib/cmake/occt")
+# CMAKE_PREFIX_PATH may be a list (the Android NDK toolchain appends to it); the deps prefix is first.
+list(GET CMAKE_PREFIX_PATH 0 _deps_prefix)
+set(OpenCASCADE_DIR "${_deps_prefix}/lib/cmake/occt")
 if (ANDROID)
     # The NDK toolchain re-roots package lookups into its sysroot, which misses OpenCASCADE_DIR.
     find_package(OpenCASCADE REQUIRED PATHS "${OpenCASCADE_DIR}" NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
