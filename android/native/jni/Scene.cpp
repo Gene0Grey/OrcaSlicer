@@ -37,7 +37,7 @@ GLuint compile(GLenum type, const char *src)
     return s;
 }
 
-Program link(const char *vs, const char *fs)
+Program make_program(const char *vs, const char *fs)
 {
     Program p;
     p.id = glCreateProgram();
@@ -162,7 +162,7 @@ void rebuild_scene()
             for (const Slic3r::ModelVolume *v : o->volumes) {
                 if (!v->is_model_part()) continue;
                 const Slic3r::Transform3d t = inst->get_matrix() * v->get_matrix();
-                const Slic3r::indexed_triangle_set &its = v->mesh().its;
+                const indexed_triangle_set &its = v->mesh().its;
                 for (const auto &f : its.indices) {
                     const Slic3r::Vec3d p0 = t * its.vertices[f[0]].cast<double>();
                     const Slic3r::Vec3d p1 = t * its.vertices[f[1]].cast<double>();
@@ -228,8 +228,8 @@ JNI(void, glInit)(JNIEnv *, jobject)
     for (Mesh &a : gl.axes) a = Mesh();
     gl.scene_version = gl.preview_version = 0;
     gl.preview_loaded = false;
-    gl.mesh = link(MESH_VS, MESH_FS);
-    gl.flat = link(FLAT_VS, FLAT_FS);
+    gl.mesh = make_program(MESH_VS, MESH_FS);
+    gl.flat = make_program(FLAT_VS, FLAT_FS);
     try {
         gl.viewer.init(reinterpret_cast<const char *>(glGetString(GL_VERSION)));
         gl.viewer_ready = true;

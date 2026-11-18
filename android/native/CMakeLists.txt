@@ -3,6 +3,8 @@
 # libvgcode draws the G-code preview; its GLES path loads GL functions itself (glad).
 set(SLIC3R_OPENGL_ES ON)
 add_subdirectory(${CMAKE_SOURCE_DIR}/src/libvgcode ${CMAKE_CURRENT_BINARY_DIR}/libvgcode)
+# Use the platform's EGL headers for eglGetProcAddress instead of glad's own egl loader.
+target_compile_definitions(libvgcode PRIVATE GLAD_GLES2_USE_SYSTEM_EGL=1)
 
 # liborca_core.so: the JNI library the app loads (OrcaCore.kt).
 add_library(orca_core SHARED
@@ -19,4 +21,4 @@ target_include_directories(orca_core PRIVATE
     ${CMAKE_SOURCE_DIR}/src/slic3r
     ${CMAKE_SOURCE_DIR}/src/slic3r/GUI
 )
-target_link_libraries(orca_core PRIVATE libslic3r libvgcode nanosvg nlohmann_json cereal::cereal GLESv3 log android)
+target_link_libraries(orca_core PRIVATE libslic3r libvgcode nanosvg nlohmann_json cereal::cereal GLESv3 EGL log android)

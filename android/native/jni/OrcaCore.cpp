@@ -337,24 +337,49 @@ JNI(jstring, setBedType)(JNIEnv *env, jobject, jint type)
     return to_j(env, state_json().dump());
 }
 
-// The edited preset's values, serialized the way preset JSON files store them.
+// The edited preset's values. Per-extruder/per-filament vectors show their first element (the
+// panels edit one extruder and the selected filament); bed shapes (points) stay whole.
 JNI(jstring, values)(JNIEnv *env, jobject, jint kind)
 {
     std::lock_guard lock(g_session.mutex);
     const DynamicPrintConfig &c = collection(kind)->get_edited_preset().config;
     json out = json::object();
-    for (const std::string &key : c.keys())
-        out[key] = c.opt_serialize(key);
+    for (const std::string &key : c.keys()) {
+        const ConfigOption *opt = c.option(key);
+        if (opt->is_vector() && opt->type() != coPoints) {
+            const auto v = static_cast<const ConfigOptionVectorBase *>(opt)->vserialize();
+            out[key] = v.empty() ? std::string() : v.front();
+        } else {
+            out[key] = opt->serialize();
+        }
+    }
     return to_j(env, out.dump());
 }
 
-JNI(jstring, setValue)(JNIEnv *env, jobject, jint kind, jstring key, jstring value)
+JNI(jstring, setValue)(JNIEnv *env, jobject, jint kind, jstring jkey, jstring jvalue)
 {
     std::lock_guard lock(g_session.mutex);
     try {
+        const std::string key = jstr(env, jkey), value = jstr(env, jvalue);
         Preset &p = collection(kind)->get_edited_preset();
         ConfigSubstitutionContext ctx(ForwardCompatibilitySubstitutionRule::Disable);
-        p.config.set_deserialize(jstr(env, key), jstr(env, value), ctx);
+        ConfigOption *opt = p.config.option(key, true);
+        if (opt == nullptr)
+            return to_j(env, "Unknown option " + key);
+        if (opt->type() == coStrings) {
+            auto &vals = static_cast<ConfigOptionStrings *>(opt)->values;
+            if (vals.empty()) vals.push_back(value); else vals.front() = value;
+        } else if (opt->is_vector() && opt->type() != coPoints) {
+            // Replace the first element, keep the others (other extruders / filaments).
+            auto vals = static_cast<const ConfigOptionVectorBase *>(opt)->vserialize();
+            if (vals.empty()) vals.push_back(value); else vals.front() = value;
+            std::string joined;
+            for (size_t i = 0; i < vals.size(); ++i)
+                joined += (i ? "," : "") + vals[i];
+            p.config.set_deserialize(key, joined, ctx);
+        } else {
+            p.config.set_deserialize(key, value, ctx);
+        }
         collection(kind)->update_dirty();
         model_changed();
         return nullptr;
