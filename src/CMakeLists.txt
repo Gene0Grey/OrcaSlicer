@@ -310,7 +310,7 @@ if (WIN32)
     endif()
 
 else ()
-    if (NOT APPLE)
+    if (NOT APPLE AND NOT ANDROID) # FFmpeg .so files for the desktop media player
         set(output_sos_Release "")
         set(output_sos_Debug "")
         add_custom_target(OrcaSlicerSosCopy ALL DEPENDS OrcaSlicer)
