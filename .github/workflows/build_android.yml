@@ -62,6 +62,10 @@ jobs:
       - name: Build libslic3r + Android slicer
         run: bash android/scripts/build_core.sh "$ORCA_ABI" orca_android_slice
 
+      - name: List installed package configs
+        if: failure()
+        run: find "$ORCA_ANDROID_OUT/prefix-$ORCA_ABI" \( -name '*Config.cmake' -o -name '*-config.cmake' \) | sed "s|$ORCA_ANDROID_OUT/||"
+
       - name: Package native libs into the app
         run: |
           BIN=$(find "$ORCA_ANDROID_OUT/core-$ORCA_ABI" -name orca_android_slice -type f | head -1)

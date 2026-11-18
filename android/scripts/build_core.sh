@@ -16,12 +16,15 @@ PREFIX="$OUT/prefix-$ABI/usr/local"
 export PATH="$TOOLS/bin:$PATH"
 
 BUILD="$OUT/core-$ABI"
+# OpenCV's Android install layout keeps its package config under sdk/native/jni.
+OPENCV_CONFIG=$(find "$PREFIX" -name OpenCVConfig.cmake | awk '{ print length, $0 }' | sort -n | head -1 | cut -d' ' -f2-)
 "$CMAKE" -S "$SRC" -B "$BUILD" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI="$ABI" -DANDROID_PLATFORM="$API" -DANDROID_STL=c++_shared \
     -DCMAKE_PREFIX_PATH="$PREFIX" \
     -DCMAKE_FIND_ROOT_PATH="$PREFIX" \
+    -DOpenCV_DIR="$(dirname "$OPENCV_CONFIG")" \
     -DSLIC3R_STATIC=ON -DSLIC3R_PCH=OFF -DSLIC3R_CAD=OFF -DSLIC3R_OPENVDB=OFF \
     -DBUILD_TESTS="${BUILD_TESTS:-OFF}"
 
