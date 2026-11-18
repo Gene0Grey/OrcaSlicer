@@ -175,7 +175,9 @@ void rebuild_scene()
             }
         gl.objects.push_back(upload(data, 6));
         auto rgba = parse_color(col);
-        if (int(oi) == g_session.selected)  // desktop selection tint
+        if (g_session.outside(*o))          // outside the build volume: the desktop's blue warning tint
+            rgba = {0.30f, 0.55f, 0.95f, 1.f};
+        else if (int(oi) == g_session.selected)  // desktop selection tint
             rgba = {std::min(1.f, rgba[0] * 0.5f + 0.5f), std::min(1.f, rgba[1] * 0.5f + 0.35f), rgba[2] * 0.5f, 1.f};
         gl.object_colors.insert(gl.object_colors.end(), rgba.begin(), rgba.end());
     }

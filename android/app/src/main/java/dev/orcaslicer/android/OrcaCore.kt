@@ -44,6 +44,13 @@ object OrcaCore {
     external fun gizmoBegin(x: Float, y: Float, width: Int, height: Int, view: FloatArray, proj: FloatArray): Int
     external fun gizmoDrag(x: Float, y: Float, width: Int, height: Int, view: FloatArray, proj: FloatArray)
     external fun gizmoEnd()
+    /** Rotates the tapped object so the tapped face lies on the bed; returns its index or -1. */
+    external fun layOnFace(x: Float, y: Float, width: Int, height: Int, view: FloatArray, proj: FloatArray): Int
+
+    external fun undo(): String
+    external fun redo(): String
+    /** {undo steps, redo steps} */
+    external fun history(): IntArray
 
     external fun objectSettingKeys(): String
     external fun objectValues(index: Int): String

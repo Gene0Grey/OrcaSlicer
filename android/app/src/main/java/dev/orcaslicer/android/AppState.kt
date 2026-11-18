@@ -39,7 +39,7 @@ data class PresetsState(
     val bed: List<Pair<Double, Double>> = emptyList(), val bedHeight: Double = 250.0, val bedType: Int = 0,
 )
 
-data class PlateObject(val name: String, val offset: List<Double>, val rotation: List<Double>, val scale: List<Double>, val size: List<Double>, val selected: Boolean)
+data class PlateObject(val name: String, val offset: List<Double>, val rotation: List<Double>, val scale: List<Double>, val size: List<Double>, val selected: Boolean, val outside: Boolean)
 
 data class RoleStat(val role: Int, val name: String, val time: Double, val percent: Double, val meters: Double, val grams: Double)
 data class SliceStats(val roles: List<RoleStat>, val travelTime: Double, val totalTime: Double, val prepareTime: Double, val meters: Double, val grams: Double, val gcode: String)
@@ -66,6 +66,8 @@ class AppState(private val context: Context) {
     var advanced by mutableStateOf(prefs.getBoolean("advanced", false))
     var projectName by mutableStateOf("Untitled")
     var gizmoMode by mutableIntStateOf(0)
+    var canUndo by mutableStateOf(false)
+    var canRedo by mutableStateOf(false)
     var objectKeys: List<String> = emptyList(); private set
     val objectValues = mutableStateMapOf<Int, Map<String, String>>()
     var recent by mutableStateOf(prefs.getString("recent", "")!!.split('\n').filter { it.isNotBlank() })
@@ -154,6 +156,9 @@ class AppState(private val context: Context) {
 
     suspend fun afterGizmo() = withContext(Dispatchers.IO) { refreshObjects(); stats = null }
 
+    suspend fun undo() = withContext(Dispatchers.IO) { applyObjects(OrcaCore.undo()); objectValues.clear(); stats = null }
+    suspend fun redo() = withContext(Dispatchers.IO) { applyObjects(OrcaCore.redo()); objectValues.clear(); stats = null }
+
     fun refreshObjectValues(index: Int) {
         objectValues[index] = JSONObject(OrcaCore.objectValues(index)).let { o -> o.keys().asSequence().associateWith { o.getString(it) } }
     }
@@ -175,9 +180,10 @@ class AppState(private val context: Context) {
         val a = JSONArray(json)
         objects = (0 until a.length()).map { a.getJSONObject(it) }.map { o ->
             fun d(k: String) = o.getJSONArray(k).let { x -> (0 until x.length()).map(x::getDouble) }
-            PlateObject(o.getString("name"), d("offset"), d("rotation"), d("scale"), d("size"), o.getBoolean("selected"))
+            PlateObject(o.getString("name"), d("offset"), d("rotation"), d("scale"), d("size"), o.getBoolean("selected"), o.optBoolean("outside"))
         }
         selected = objects.indexOfFirst { it.selected }
+        OrcaCore.history().let { canUndo = it[0] > 0; canRedo = it[1] > 0 }
     }
 
     private fun applyState(json: String) {

@@ -147,7 +147,8 @@ json objects_json()
                        {"rotation", {rot.x(), rot.y(), rot.z()}},
                        {"scale", {sc.x(), sc.y(), sc.z()}},
                        {"size", {bb.size().x(), bb.size().y(), bb.size().z()}},
-                       {"selected", int(i) == g_session.selected}});
+                       {"selected", int(i) == g_session.selected},
+                       {"outside", g_session.outside(*o)}});
     }
     return out;
 }
@@ -436,6 +437,7 @@ JNI(jstring, addModel)(JNIEnv *env, jobject, jstring path)
     std::lock_guard lock(g_session.mutex);
     try {
         Model loaded = Model::read_from_file(jstr(env, path), nullptr, nullptr, LoadStrategy::LoadModel | LoadStrategy::AddDefaultInstances);
+        g_session.snapshot();
         for (ModelObject *o : loaded.objects) {
             ModelObject *added = g_session.model.add_object(*o);
             added->ensure_on_bed();
@@ -468,6 +470,7 @@ JNI(jstring, objectOp)(JNIEnv *env, jobject, jint op, jint idx)
     std::lock_guard lock(g_session.mutex);
     Model &m = g_session.model;
     const bool valid = idx >= 0 && size_t(idx) < m.objects.size();
+    if (valid || op == 2 || op == 4) g_session.snapshot();
     switch (op) {
     case 0: if (valid) { m.delete_object(size_t(idx)); g_session.selected = -1; } break;
     case 1: if (valid) { m.add_object(*m.objects[idx]); arrange_model(); } break;
@@ -487,6 +490,7 @@ JNI(jstring, setTransform)(JNIEnv *env, jobject, jint idx, jdoubleArray values)
     if (idx < 0 || size_t(idx) >= m.objects.size()) return to_j(env, objects_json().dump());
     jdouble v[9];
     env->GetDoubleArrayRegion(values, 0, 9, v);
+    g_session.snapshot();
     ModelInstance *inst = m.objects[idx]->instances.front();
     inst->set_offset(Vec3d(v[0], v[1], v[2]));
     inst->set_rotation(Vec3d(v[3], v[4], v[5]));
@@ -566,6 +570,7 @@ JNI(jstring, setObjectValue)(JNIEnv *env, jobject, jint idx, jstring jkey, jstri
     std::lock_guard lock(g_session.mutex);
     if (idx < 0 || size_t(idx) >= g_session.model.objects.size()) return to_j(env, "No such object");
     try {
+        g_session.snapshot();
         ModelObject *obj = g_session.model.objects[idx];
         const std::string key = jstr(env, jkey);
         if (jvalue == nullptr) {
@@ -579,4 +584,29 @@ JNI(jstring, setObjectValue)(JNIEnv *env, jobject, jint idx, jstring jkey, jstri
     } catch (const std::exception &e) {
         return to_j(env, e.what());
     }
+}
+
+// Undo/redo of plate edits. Return the objects, like the other object calls.
+JNI(jstring, undo)(JNIEnv *env, jobject)
+{
+    std::lock_guard lock(g_session.mutex);
+    g_session.step(g_session.undo_stack, g_session.redo_stack);
+    return to_j(env, objects_json().dump());
+}
+
+JNI(jstring, redo)(JNIEnv *env, jobject)
+{
+    std::lock_guard lock(g_session.mutex);
+    g_session.step(g_session.redo_stack, g_session.undo_stack);
+    return to_j(env, objects_json().dump());
+}
+
+// {undo, redo} counts for enabling the buttons.
+JNI(jintArray, history)(JNIEnv *env, jobject)
+{
+    std::lock_guard lock(g_session.mutex);
+    const jint v[2] = {jint(g_session.undo_stack.size()), jint(g_session.redo_stack.size())};
+    jintArray a = env->NewIntArray(2);
+    env->SetIntArrayRegion(a, 0, 2, v);
+    return a;
 }

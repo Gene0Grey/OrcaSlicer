@@ -230,6 +230,7 @@ JNI(jint, gizmoBegin)(JNIEnv *env, jobject, jfloat x, jfloat y, jint w, jint h, 
         (g_mode == 1 && handle == Plane && !hit_plane(o, d, c, Vec3d::UnitZ(), g_drag.ref)) ||
         (g_mode == 2 && !hit_plane(o, d, c, AXES[handle - 1], g_drag.ref)))
         return None;
+    g_session.snapshot();
     if (g_mode == 2) g_drag.ref -= c;
     if (g_mode == 3) g_drag.ref_dist = std::max(4., (p - cam.project(c)).norm());
     g_active = handle;
@@ -263,7 +264,9 @@ JNI(void, gizmoDrag)(JNIEnv *env, jobject, jfloat x, jfloat y, jint w, jint h, j
         angle = std::round(angle / snap) * snap;
         delta = Eigen::Translation3d(c) * Eigen::AngleAxisd(angle, a) * Eigen::Translation3d(-c);
     } else if (g_mode == 3) {
-        const double s = std::clamp((Vec2d(x, y) - cam.project(c)).norm() / g_drag.ref_dist, 0.05, 20.);
+        // Doubles per 35% of the screen dragged outward: steady on small and large objects alike.
+        const double moved = (Vec2d(x, y) - cam.project(c)).norm() - g_drag.ref_dist;
+        const double s = std::clamp(std::pow(2., moved / (0.35 * std::min(cam.w, cam.h))), 0.05, 20.);
         delta = Eigen::Translation3d(c) * Eigen::Scaling(s) * Eigen::Translation3d(-c);
     }
     ModelObject *obj = g_session.model.objects[g_session.selected];
@@ -284,4 +287,54 @@ JNI(void, gizmoEnd)(JNIEnv *, jobject)
     g_drag = Drag();
     g_active = None;
     ++g_session.scene_version;
+}
+
+// Lay on face (the desktop's Flatten gizmo, by tapping): rotates the tapped object so the tapped
+// face rests on the bed. Returns the object index, or -1 if nothing was hit.
+JNI(jint, layOnFace)(JNIEnv *env, jobject, jfloat x, jfloat y, jint w, jint h, jfloatArray view, jfloatArray proj)
+{
+    std::lock_guard lock(g_session.mutex);
+    const Camera cam = camera(env, w, h, view, proj);
+    Vec3d o, d;
+    cam.ray(x, y, o, d);
+    int best_obj = -1;
+    double best_t = 1e30;
+    Vec3d normal = Vec3d::Zero();
+    for (size_t oi = 0; oi < g_session.model.objects.size(); ++oi) {
+        const ModelObject *obj = g_session.model.objects[oi];
+        if (obj->instances.empty()) continue;
+        const ModelInstance *inst = obj->instances.front();
+        for (const ModelVolume *v : obj->volumes) {
+            if (!v->is_model_part()) continue;
+            const Transform3d t = inst->get_matrix() * v->get_matrix();
+            const auto &its = v->mesh().its;
+            for (const auto &f : its.indices) {
+                const Vec3d p0 = t * its.vertices[f[0]].cast<double>(), e1 = t * its.vertices[f[1]].cast<double>() - p0,
+                            e2 = t * its.vertices[f[2]].cast<double>() - p0, pv = d.cross(e2);
+                const double det = e1.dot(pv);
+                if (std::abs(det) < 1e-12) continue;
+                const Vec3d tv = o - p0;
+                const double u = tv.dot(pv) / det;
+                if (u < 0. || u > 1.) continue;
+                const Vec3d qv = tv.cross(e1);
+                const double vv = d.dot(qv) / det, dist = e2.dot(qv) / det;
+                if (vv < 0. || u + vv > 1. || dist <= 0. || dist >= best_t) continue;
+                best_t = dist; best_obj = int(oi); normal = e1.cross(e2).normalized();
+            }
+        }
+    }
+    if (best_obj < 0) return -1;
+    g_session.snapshot();
+    ModelObject *obj = g_session.model.objects[best_obj];
+    ModelInstance *inst = obj->instances.front();
+    const Vec3d c = obj->instance_bounding_box(0).center();
+    const Eigen::Quaterniond q = Eigen::Quaterniond::FromTwoVectors(normal, -Vec3d::UnitZ());
+    const Transform3d rot = Eigen::Translation3d(c) * q * Eigen::Translation3d(-c);
+    inst->set_transformation(Geometry::Transformation(rot * inst->get_matrix()));
+    obj->invalidate_bounding_box();
+    obj->ensure_on_bed();
+    g_session.selected = best_obj;
+    g_session.sliced = false;
+    ++g_session.scene_version;
+    return best_obj;
 }

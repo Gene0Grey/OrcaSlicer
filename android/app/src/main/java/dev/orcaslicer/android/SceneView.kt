@@ -119,8 +119,12 @@ class SceneView(context: Context, val camera: OrbitCamera, private val dark: Boo
         override fun onSingleTapUp(e: MotionEvent): Boolean {
             if (mode == 0) {
                 camera.update(width, height)
-                val idx = OrcaCore.pick(e.x, e.y, width, height, camera.view.clone(), camera.proj.clone())
-                onPick(idx)
+                if (gizmoMode == 4) {
+                    // Lay on face: the tapped face goes onto the bed.
+                    if (OrcaCore.layOnFace(e.x, e.y, width, height, camera.view.clone(), camera.proj.clone()) >= 0) { onGizmoEnd(); requestRender() }
+                } else {
+                    onPick(OrcaCore.pick(e.x, e.y, width, height, camera.view.clone(), camera.proj.clone()))
+                }
             }
             return true
         }

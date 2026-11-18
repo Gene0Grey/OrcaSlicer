@@ -34,6 +34,9 @@ import androidx.compose.material.icons.filled.OpenWith
 import androidx.compose.material.icons.filled.PhotoSizeSelectSmall
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.automirrored.filled.RotateRight
+import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.filled.VerticalAlignBottom
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.ScreenRotation
@@ -204,7 +207,7 @@ private fun TopBar(state: AppState, onSlice: () -> Unit, onExport: () -> Unit, o
             if (state.screen == Screen.Prepare || state.screen == Screen.Preview) Row(
                 Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Button(onSlice, Modifier.weight(1f), enabled = state.objects.isNotEmpty() && state.sliceProgress == null) { Text("Slice plate") }
+                Button(onSlice, Modifier.weight(1f), enabled = state.objects.isNotEmpty() && state.objects.none { it.outside } && state.sliceProgress == null) { Text("Slice plate") }
                 OutlinedButton(onExport, Modifier.weight(1f), enabled = state.stats != null) { Text("Export G-code") }
                 if (state.stats != null) TextButton(onShare) { Text("Share") }
             }
@@ -230,12 +233,15 @@ private fun PrepareToolbar(state: AppState, onAdd: () -> Unit, onFit: () -> Unit
     val sel = state.selected >= 0
     Column {
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Tool(Icons.AutoMirrored.Filled.Undo, "Undo", state.canUndo) { scope.launch { state.undo() } }
+        Tool(Icons.AutoMirrored.Filled.Redo, "Redo", state.canRedo) { scope.launch { state.redo() } }
         Tool(Icons.Default.AddBox, "Add model", true, onAdd)
         Tool(Icons.Default.AutoAwesomeMosaic, "Arrange", state.objects.isNotEmpty()) { scope.launch { state.objectOp(2) } }
         Tool(Icons.Default.ScreenRotation, "Auto orient", sel) { scope.launch { state.objectOp(3) } }
         Toggle(Icons.Default.OpenWith, "Move", sel, state.gizmoMode == 1) { state.setGizmo(1) }
         Toggle(Icons.AutoMirrored.Filled.RotateRight, "Rotate", sel, state.gizmoMode == 2) { state.setGizmo(2) }
         Toggle(Icons.Default.PhotoSizeSelectSmall, "Scale", sel, state.gizmoMode == 3) { state.setGizmo(3) }
+        Toggle(Icons.Default.VerticalAlignBottom, "Lay on face", state.objects.isNotEmpty(), state.gizmoMode == 4) { state.setGizmo(4) }
         Tool(Icons.Default.Tune, "Exact position / rotation / scale", sel, onTransform)
         Tool(Icons.Default.ContentCopy, "Duplicate", sel) { scope.launch { state.objectOp(1) } }
         Tool(Icons.Default.Delete, "Delete", sel) { scope.launch { state.objectOp(0) } }
@@ -243,6 +249,7 @@ private fun PrepareToolbar(state: AppState, onAdd: () -> Unit, onFit: () -> Unit
         Tool(Icons.Default.CenterFocusStrong, "Fit view", true, onFit)
     }
     val hint = when {
+        state.gizmoMode == 4 -> "Tap a face to lay the object on it"
         state.gizmoMode != 0 && !sel -> "Tap an object to select it"
         state.gizmoMode == 1 -> "Drag the object to slide it, or an arrow to move along one axis"
         state.gizmoMode == 2 -> "Drag a ring to rotate (5° steps)"
@@ -250,6 +257,10 @@ private fun PrepareToolbar(state: AppState, onAdd: () -> Unit, onFit: () -> Unit
         else -> null
     }
     hint?.let { Surface(Modifier.padding(horizontal = 8.dp), shape = MaterialTheme.shapes.small, tonalElevation = 3.dp) { Text(it, Modifier.padding(8.dp), style = MaterialTheme.typography.labelMedium) } }
+    if (state.objects.any { it.outside }) Surface(Modifier.padding(8.dp), shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.errorContainer) {
+        Text("An object is outside the printable area (shown in blue). Move or scale it to slice.", Modifier.padding(8.dp),
+            color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.labelMedium)
+    }
     }
 }
 
