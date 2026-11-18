@@ -46,6 +46,28 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.ImageShader
+import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material3.Icon
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
@@ -85,18 +107,20 @@ private fun oswald(weight: Int) =
 
 val Oswald = FontFamily(oswald(400), oswald(500), oswald(600))
 
-private fun caps(size: Int, weight: Int = 500, track: Double = 0.06) =
-    TextStyle(fontFamily = Oswald, fontWeight = FontWeight(weight), fontSize = size.sp, lineHeight = (size * 1.25).sp, letterSpacing = track.em)
+// Board letters: light-to-regular weight, wide fixed tracking, tabular figures so numbers sit in columns.
+private fun caps(size: Int, weight: Int = 400, track: Double = 0.12) =
+    TextStyle(fontFamily = Oswald, fontWeight = FontWeight(weight), fontSize = size.sp, lineHeight = (size * 1.25).sp,
+        letterSpacing = track.em, fontFeatureSettings = "tnum")
 
 private val BoardTypography = Typography(
-    displaySmall = caps(30, 500, 0.08),
-    headlineSmall = caps(24, 500, 0.06),
-    titleLarge = caps(21, 500, 0.06),
-    titleMedium = caps(17, 500, 0.06),
-    titleSmall = caps(15, 600, 0.10),
-    labelLarge = caps(15, 500, 0.08),
-    labelMedium = caps(13, 400, 0.08),
-    labelSmall = caps(11, 400, 0.10),
+    displaySmall = caps(30, 400, 0.18),
+    headlineSmall = caps(24, 400, 0.14),
+    titleLarge = caps(21, 500, 0.12),
+    titleMedium = caps(17, 400, 0.12),
+    titleSmall = caps(15, 500, 0.16),
+    labelLarge = caps(15, 500, 0.12),
+    labelMedium = caps(13, 400, 0.10),
+    labelSmall = caps(11, 400, 0.12),
     // Prose (tooltips, descriptions) stays in the system face for legibility.
     bodyLarge = TextStyle(fontSize = 16.sp, lineHeight = 24.sp),
     bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 20.sp),
@@ -128,9 +152,31 @@ private val BoardShapes = Shapes(
 fun BoardTheme(content: @Composable () -> Unit) =
     MaterialTheme(colorScheme = BoardScheme, typography = BoardTypography, shapes = BoardShapes, content = content)
 
-/** Brushed steel frame: the panel material around flaps. */
+/**
+ * Brushed steel: a seamless 256 px tile of horizontal grain, generated once. Each row gets its own
+ * brightness and streaks of varying length run along it, the way a brushed sheet catches light.
+ */
+private val steelTile: ImageBitmap by lazy {
+    val n = 256
+    val px = IntArray(n * n)
+    val rnd = java.util.Random(7)
+    for (y in 0 until n) {
+        val row = rnd.nextGaussian() * 4.0
+        var streak = 0.0
+        var left = 0
+        for (x in 0 until n) {
+            if (left-- <= 0) { streak = rnd.nextGaussian() * 6.0; left = 8 + rnd.nextInt(90) }
+            val v = (42 + row + streak + rnd.nextGaussian() * 1.5).coerceIn(28.0, 64.0).toInt()
+            px[y * n + x] = (0xFF shl 24) or (v shl 16) or ((v + 3) shl 8) or (v + 7)
+        }
+    }
+    android.graphics.Bitmap.createBitmap(px, n, n, android.graphics.Bitmap.Config.ARGB_8888).asImageBitmap()
+}
+private val steelBrush by lazy { ShaderBrush(ImageShader(steelTile, TileMode.Repeated, TileMode.Repeated)) }
+
+/** Brushed steel frame: the panel material around flaps, lit top edge and shadowed bottom edge. */
 fun Modifier.steel(): Modifier = this.drawBehind {
-    drawRect(Brush.verticalGradient(listOf(Color(0xFF2F3236), Board.frame, Color(0xFF26292C))))
+    drawRect(steelBrush)
     drawLine(Board.frameHi, Offset(0f, 0f), Offset(size.width, 0f), 1.dp.toPx())
     drawLine(Color(0xFF15171A), Offset(0f, size.height), Offset(size.width, size.height), 1.dp.toPx())
 }
@@ -138,9 +184,15 @@ fun Modifier.steel(): Modifier = this.drawBehind {
 /** A flap face: black cell, lighter upper half, the split line across the middle. */
 fun Modifier.flap(border: Color? = null, radius: Dp = 3.dp): Modifier = this
     .drawBehind {
+        val mid = size.height / 2
+        val gap = 1.dp.toPx()
         drawRect(Board.flap)
-        drawRect(Board.flapTop, size = size.copy(height = size.height / 2))
-        drawLine(Color.Black, Offset(0f, size.height / 2), Offset(size.width, size.height / 2), 1.dp.toPx())
+        drawRect(Board.flapTop, size = size.copy(height = mid - gap))
+        drawRect(Color.Black, Offset(0f, mid - gap), size.copy(height = gap * 2))
+        // Hinge pins at both ends of the split.
+        val pin = Size(3.dp.toPx(), 5.dp.toPx())
+        drawRect(Board.steelMid, Offset(0f, mid - pin.height / 2), pin)
+        drawRect(Board.steelMid, Offset(size.width - pin.width, mid - pin.height / 2), pin)
     }
     .let { if (border != null) it.border(1.dp, border, RoundedCornerShape(radius)) else it }
 
@@ -156,19 +208,20 @@ private fun reducedMotion(): Boolean {
  */
 @Composable
 fun FlapText(text: String, modifier: Modifier = Modifier, style: TextStyle = MaterialTheme.typography.labelLarge,
-             color: Color = Board.letter, maxLines: Int = 1) {
+             color: Color = Board.letter, maxLines: Int = 1, flipIn: Boolean = false) {
     if (reducedMotion() || text.length > 28) {
         Text(text, modifier, style = style, color = color, maxLines = maxLines, overflow = TextOverflow.Ellipsis)
         return
     }
     Row(modifier) {
-        text.forEachIndexed { i, c -> FlapChar(c, i, style, color) }
+        text.forEachIndexed { i, c -> FlapChar(c, i, style, color, flipIn) }
     }
 }
 
 @Composable
-private fun FlapChar(c: Char, index: Int, style: TextStyle, color: Color) {
-    var shown by remember { mutableStateOf(c) }
+private fun FlapChar(c: Char, index: Int, style: TextStyle, color: Color, flipIn: Boolean) {
+    // flipIn: start blank so the first value cascades in (results after a slice).
+    var shown by remember { mutableStateOf(if (flipIn) ' ' else c) }
     val rot = remember { Animatable(0f) }
     LaunchedEffect(c) {
         if (c == shown) return@LaunchedEffect
@@ -184,9 +237,58 @@ private fun FlapChar(c: Char, index: Int, style: TextStyle, color: Color) {
 /** A value shown on a flap cell, optionally in a status colour. */
 @Composable
 fun FlapCell(text: String, modifier: Modifier = Modifier, color: Color = Board.letter,
-             style: TextStyle = MaterialTheme.typography.labelLarge, border: Color? = null) {
+             style: TextStyle = MaterialTheme.typography.labelLarge, border: Color? = null, flipIn: Boolean = false) {
     Box(modifier.flap(border).heightIn(min = 40.dp).padding(horizontal = 10.dp), contentAlignment = Alignment.CenterStart) {
-        FlapText(text, style = style, color = color)
+        FlapText(text, style = style, color = color, flipIn = flipIn)
+    }
+}
+
+/** ON / OFF on a flap: the board's switch. Teal letters and edge when on. */
+@Composable
+fun FlapToggle(checked: Boolean, onChange: (Boolean) -> Unit, enabled: Boolean = true, role: Role = Role.Switch, label: String? = null) {
+    Box(Modifier.heightIn(min = 48.dp).toggleable(checked, enabled = enabled, role = role, onValueChange = onChange)
+        .then(if (label != null) Modifier.semantics { contentDescription = label } else Modifier)
+        .flap(if (checked) Board.teal else Board.frameHi).padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
+        FlapText(if (checked) "ON " else "OFF", style = MaterialTheme.typography.labelLarge,
+            color = when { !enabled -> Board.steelMid; checked -> Board.tealText; else -> Board.steelLight })
+    }
+}
+
+/** The primary board key: a filled teal flap with its split, the label, and a divided chevron cell. */
+@Composable
+fun BoardKey(label: String, icon: ImageVector, enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val fill = if (enabled) Board.teal else Board.frame
+    val ink = if (enabled) Board.flap else Board.steelMid
+    Row(modifier.heightIn(min = 56.dp).clickable(enabled = enabled, role = Role.Button, onClickLabel = label, onClick = onClick)
+        .drawBehind {
+            drawRect(fill)
+            drawRect(Color.Black.copy(alpha = 0.18f), Offset(0f, size.height / 2), size.copy(height = 1.dp.toPx()))
+        }, verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, tint = ink, modifier = Modifier.padding(start = 14.dp).size(22.dp))
+        Text(label.uppercase(), Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.labelLarge, color = ink)
+        Box(Modifier.heightIn(min = 56.dp).drawBehind { drawRect(Color.Black.copy(alpha = 0.25f), size = size.copy(width = 1.dp.toPx())) }
+            .padding(horizontal = 10.dp), contentAlignment = Alignment.Center) {
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = ink)
+        }
+    }
+}
+
+/** Text entry on a flap: board caps, caps placeholder in steel, optional key cell on the right. */
+@Composable
+fun BoardField(value: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier,
+               keyboard: KeyboardOptions = KeyboardOptions.Default, onDone: (() -> Unit)? = null, key: ImageVector? = null) {
+    var focused by remember { mutableStateOf(false) }
+    Row(modifier.heightIn(min = 48.dp).flap(if (focused) Board.teal else Board.frameHi), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.weight(1f).padding(horizontal = 12.dp), contentAlignment = Alignment.CenterStart) {
+            if (value.isEmpty()) Text(placeholder.uppercase(), style = MaterialTheme.typography.labelLarge, color = Board.steelLight, maxLines = 1)
+            BasicTextField(value, onChange, singleLine = true, cursorBrush = SolidColor(Board.teal),
+                textStyle = MaterialTheme.typography.labelLarge.copy(color = Board.letter),
+                keyboardOptions = keyboard.copy(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { onDone?.invoke() }),
+                modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused })
+        }
+        if (key != null) Box(Modifier.heightIn(min = 48.dp).drawBehind { drawRect(Board.frameHi, size = size.copy(width = 1.dp.toPx())) }
+            .padding(horizontal = 12.dp), contentAlignment = Alignment.Center) { Icon(key, null, tint = Board.steelLight) }
     }
 }
 

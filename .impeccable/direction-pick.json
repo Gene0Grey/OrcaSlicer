@@ -1,0 +1,11 @@
+{
+  "surface": "android app (android/app/src/main/java/dev/orcaslicer/android)",
+  "mode": "operate",
+  "seed": "034b7718",
+  "assigned": "Spring Steel Plate (grounded #6)",
+  "picked": "challenger-split-flap",
+  "pickedLabel": "Split-Flap Board",
+  "pickedBy": "user, on the decision page",
+  "fusion": "Orca teal replaces the concourse amber as the live/active colour (brand commitment); amber = modified/warning; red = error/off-plate",
+  "qualityBar": [".impeccable/ref/board.png", ".impeccable/ref/hero.png"]
+}

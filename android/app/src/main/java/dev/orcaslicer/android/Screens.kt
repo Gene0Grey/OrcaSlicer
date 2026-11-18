@@ -85,19 +85,19 @@ fun HomeScreen(state: AppState, onNew: () -> Unit, onOpen: () -> Unit, onRecent:
         }
         BoardHeading("Recently opened")
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 4.dp)) {
-            Text("OPENED", Modifier.width(104.dp), style = MaterialTheme.typography.labelSmall, color = Board.steelMid)
-            Text("FILE", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = Board.steelMid)
-            Text("TYPE", Modifier.width(48.dp), style = MaterialTheme.typography.labelSmall, color = Board.steelMid, textAlign = TextAlign.End)
+            Text("OPENED", Modifier.width(116.dp), style = MaterialTheme.typography.labelSmall, color = Board.steelLight)
+            Text("FILE", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = Board.steelLight)
+            Text("TYPE", Modifier.width(56.dp), style = MaterialTheme.typography.labelSmall, color = Board.steelLight, textAlign = TextAlign.End)
         }
         val files = state.recent.map(::File).filter { it.exists() }
         if (files.isEmpty()) Text("NO FILES YET. OPEN A MODEL TO START.", Modifier.padding(16.dp), style = MaterialTheme.typography.labelMedium, color = Board.steelLight)
         files.forEach { f ->
             Row(Modifier.fillMaxWidth().clickable { onRecent(f.path) }.heightIn(min = 56.dp).drawBehind {
                 drawLine(Board.rule, Offset(0f, size.height - 1), Offset(size.width, size.height - 1), 1.dp.toPx())
-            }.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(stamp.format(Date(f.lastModified())).uppercase(), Modifier.width(104.dp), style = MaterialTheme.typography.labelMedium, color = Board.steelLight)
-                Text(f.nameWithoutExtension.uppercase(), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(f.extension.uppercase(), Modifier.width(48.dp), style = MaterialTheme.typography.labelMedium, color = Board.tealText, textAlign = TextAlign.End)
+            }.padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                FlapCell(stamp.format(Date(f.lastModified())).uppercase(), Modifier.width(116.dp), style = MaterialTheme.typography.labelMedium, color = Board.steelLight)
+                FlapCell(f.nameWithoutExtension.uppercase(), Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+                FlapCell(f.extension.uppercase(), Modifier.width(56.dp), style = MaterialTheme.typography.labelMedium, color = Board.tealText)
             }
         }
         Spacer(Modifier.height(24.dp))
@@ -148,8 +148,7 @@ fun DeviceScreen(state: AppState) {
         AlertDialog(
             onDismissRequest = { edit = false }, containerColor = Board.frame,
             title = { Text("PRINTER ADDRESS", style = MaterialTheme.typography.titleMedium) },
-            text = { OutlinedTextField(text, { text = it }, singleLine = true, colors = fieldColors, label = { Text("Host name or IP") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)) },
+            text = { BoardField(text, { text = it }, "Host name or IP", keyboard = KeyboardOptions(keyboardType = KeyboardType.Uri)) },
             confirmButton = { TextButton({ url = text.trim(); prefs.edit().putString("device_url_${state.presets.printer}", url).apply(); edit = false }) { Text("CONNECT", color = Board.tealText) } },
             dismissButton = { TextButton({ edit = false }) { Text("CANCEL", color = Board.steelLight) } },
         )
@@ -162,8 +161,7 @@ fun ProjectScreen(state: AppState) {
     var name by remember { mutableStateOf(state.projectName) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         BoardHeading("Project")
-        OutlinedTextField(name, { name = it; state.projectName = it }, label = { Text("Project name") }, singleLine = true, colors = fieldColors,
-            modifier = Modifier.fillMaxWidth().padding(16.dp))
+        BoardRow("Name") { BoardField(name, { name = it; state.projectName = it }, "Project name", Modifier.weight(1f)) }
         BoardRow("Printer") { FlapCell(state.presets.printer.uppercase(), Modifier.weight(1f)) }
         BoardRow("Process") { FlapCell(state.presets.process.uppercase(), Modifier.weight(1f)) }
         state.presets.slots.forEachIndexed { i, s ->
@@ -203,17 +201,16 @@ fun TransformDialog(state: AppState, onClose: () -> Unit) {
                     Text(title.uppercase(), style = MaterialTheme.typography.labelMedium, color = Board.steelLight)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         listOf("X", "Y", "Z").forEachIndexed { i, axis ->
-                            OutlinedTextField(fields[start + i].value, { v ->
+                            BoardField(fields[start + i].value, { v ->
                                 fields[start + i].value = v
                                 if (start == 6 && uniform) (6..8).forEach { fields[it].value = v }
-                            }, label = { Text(axis) }, singleLine = true, colors = fieldColors, modifier = Modifier.weight(1f),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+                            }, axis, Modifier.weight(1f), keyboard = KeyboardOptions(keyboardType = KeyboardType.Decimal))
                         }
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(uniform, { uniform = it }, colors = CheckboxDefaults.colors(checkedColor = Board.teal, checkmarkColor = Board.flap))
-                    Text("UNIFORM SCALE", style = MaterialTheme.typography.labelMedium)
+                    Text("UNIFORM SCALE", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
+                    FlapToggle(uniform, { uniform = it }, role = androidx.compose.ui.semantics.Role.Checkbox, label = "Uniform scale")
                 }
                 Text("SIZE  %.1f × %.1f × %.1f MM".format(o.size[0], o.size[1], o.size[2]), style = MaterialTheme.typography.labelMedium, color = Board.steelLight)
             }

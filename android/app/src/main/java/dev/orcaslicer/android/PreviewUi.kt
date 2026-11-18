@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.semantics.Role
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.MaterialTheme
@@ -109,7 +111,7 @@ fun ResultsBoard(state: AppState, info: PreviewInfo?, host: PlateHost) {
 @Composable
 private fun Total(label: String, value: String, modifier: Modifier) = Column(modifier) {
     Text(label.uppercase(), style = MaterialTheme.typography.labelSmall, color = Board.steelLight)
-    FlapCell(value, Modifier.fillMaxWidth(), style = MaterialTheme.typography.headlineSmall, color = Board.letter)
+    FlapCell(value, Modifier.fillMaxWidth(), style = MaterialTheme.typography.headlineSmall, color = Board.letter, flipIn = true)
 }
 
 @Composable
@@ -119,23 +121,24 @@ private fun RowScope.Head(text: String, w: Float) =
 @Composable
 private fun LegendRow(name: String, swatch: androidx.compose.ui.graphics.Color, time: String, percent: String, grams: String, shown: Boolean, onToggle: (Boolean) -> Unit) {
     val dim = if (shown) Board.letter else Board.steelMid
-    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).drawBehind {
+    val cell = MaterialTheme.typography.labelMedium
+    Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).drawBehind {
         drawLine(Board.rule, Offset(0f, size.height - 1), Offset(size.width, size.height - 1), 1.dp.toPx())
-    }.padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    }.padding(start = 12.dp, end = 8.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp)) {
         Row(Modifier.weight(2.2f), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(width = 6.dp, height = 22.dp).background(if (shown) swatch else Board.steelMid))
-            Text(name.uppercase(), Modifier.padding(start = 8.dp), style = MaterialTheme.typography.labelMedium, color = dim, maxLines = 1)
+            Box(Modifier.size(14.dp).flap().padding(2.dp).background(if (shown) swatch else Board.steelMid))
+            Text(name.uppercase(), Modifier.padding(start = 8.dp), style = cell, color = dim, maxLines = 1)
         }
-        Text(time, Modifier.weight(1.1f), style = MaterialTheme.typography.labelMedium, color = dim)
-        Text(percent, Modifier.weight(0.7f), style = MaterialTheme.typography.labelMedium, color = dim)
-        Text(grams, Modifier.weight(0.7f), style = MaterialTheme.typography.labelMedium, color = dim)
-        Box(Modifier.weight(0.8f), contentAlignment = Alignment.CenterStart) {
-            Checkbox(shown, onToggle, colors = CheckboxDefaults.colors(checkedColor = Board.teal, checkmarkColor = Board.flap, uncheckedColor = Board.steelMid))
-        }
+        FlapCell(time, Modifier.weight(1.1f), style = cell, color = dim)
+        FlapCell(percent, Modifier.weight(0.7f), style = cell, color = dim)
+        FlapCell(grams, Modifier.weight(0.7f), style = cell, color = dim)
+        Box(Modifier.weight(0.8f), contentAlignment = Alignment.Center) { FlapToggle(shown, onToggle, role = Role.Checkbox, label = "Show $name") }
     }
 }
 
 /** Layer range (right edge) and moves within the top layer (bottom), with flap readouts. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun PreviewSliders(stats: SliceStats?, info: PreviewInfo?, scene: SceneView?, bottomInset: Dp) {
     if (stats == null || info == null) {
@@ -154,7 +157,8 @@ fun PreviewSliders(stats: SliceStats?, info: PreviewInfo?, scene: SceneView?, bo
                     range = r
                     scene?.onGl { OrcaCore.previewSetLayers(r.start.roundToInt(), r.endInclusive.roundToInt()) }
                 },
-                valueRange = 0f..(layers - 1).toFloat(), colors = sliderColors, modifier = Modifier.weight(1f).vertical(),
+                valueRange = 0f..(layers - 1).toFloat(), modifier = Modifier.weight(1f).vertical(),
+                startThumb = { FlapThumb() }, endThumb = { FlapThumb() }, track = { RuleTrack() },
             )
             LayerFlap(range.start.roundToInt(), info.zs)
         }
@@ -167,11 +171,18 @@ fun PreviewSliders(stats: SliceStats?, info: PreviewInfo?, scene: SceneView?, bo
                     scene?.onGl { OrcaCore.previewSetMoves(info.fullMoves.first, v.roundToInt()) }
                 },
                 valueRange = info.fullMoves.first.toFloat()..info.fullMoves.second.toFloat().coerceAtLeast(info.fullMoves.first + 1f),
-                colors = sliderColors, modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                thumb = { FlapThumb() }, track = { RuleTrack() }, modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
             )
         }
     }
 }
+
+/** Slider thumb: a small flap key with a teal edge; the track stays a thin steel rule. */
+@Composable
+private fun FlapThumb() = Box(Modifier.size(width = 22.dp, height = 34.dp).flap(Board.teal, 2.dp))
+
+@Composable
+private fun RuleTrack() = Box(Modifier.fillMaxWidth().height(3.dp).background(Board.steelMid))
 
 @Composable
 private fun LayerFlap(layer: Int, zs: List<Float>) = Column(Modifier.flap(Board.frameHi).padding(horizontal = 8.dp, vertical = 4.dp),

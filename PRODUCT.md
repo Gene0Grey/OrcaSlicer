@@ -60,4 +60,4 @@ Not a remote control or a cloud slicer: the real OrcaSlicer engine (libslic3r) a
 
 ## Accessibility & Inclusion
 
-Large touch targets (48 dp minimum), legible text at system font scaling, colour never the only signal (e.g. off-bed state also shows a message), dark and light themes.
+Large touch targets (48 dp minimum), legible text at system font scaling, colour never the only signal (e.g. off-bed state also shows a message). The chosen board world is dark; whether a light variant is needed is an open decision the user has not been asked yet.
