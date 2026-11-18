@@ -4,7 +4,7 @@
 set -euo pipefail
 
 ABI=${1:-arm64-v8a}; shift || true
-TARGETS=${*:-OrcaSlicer}
+TARGETS=("${@:-OrcaSlicer}")
 API=${ANDROID_API:-29}
 TOOLS=${ANDROID_TOOLS:-$HOME/android-tools}
 NDK=${ANDROID_NDK:-$TOOLS/android-ndk-r29}
@@ -23,7 +23,7 @@ BUILD="$OUT/core-$ABI"
     -DCMAKE_PREFIX_PATH="$PREFIX" \
     -DCMAKE_FIND_ROOT_PATH="$PREFIX" \
     -DSLIC3R_STATIC=ON -DSLIC3R_PCH=OFF -DSLIC3R_CAD=OFF -DSLIC3R_OPENVDB=OFF \
-    -DBUILD_TESTS=${BUILD_TESTS:-OFF}
+    -DBUILD_TESTS="${BUILD_TESTS:-OFF}"
 
 # Low-RAM hosts: big libslic3r translation units need 1-2 GB each.
-"$CMAKE" --build "$BUILD" --target $TARGETS -j "${JOBS:-3}"
+"$CMAKE" --build "$BUILD" --target "${TARGETS[@]}" -j "${JOBS:-3}"
