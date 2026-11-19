@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.VerticalAlignBottom
+import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.DropdownMenu
@@ -311,7 +312,11 @@ private fun SliceProgressBoard(percent: Int, text: String, modifier: Modifier, o
 @Composable
 private fun PreviewOverlay(state: AppState, host: PlateHost, bottomInset: Dp) {
     Box(Modifier.fillMaxSize()) {
-        PreviewSliders(state.stats, host.preview, host.scene, bottomInset)
+        var layerAction by remember { mutableStateOf(-1) }
+        PreviewSliders(state.stats, host.preview, host.scene, bottomInset, state.layerGcodes) { layerAction = it }
+        host.preview?.zs?.getOrNull(layerAction)?.let { z ->
+            LayerActionDialog(state, z.toDouble(), layerAction, onDone = {}) { layerAction = -1 }
+        }
         var platesOpen by remember { mutableStateOf(false) }
         Row(Modifier.align(Alignment.TopStart).padding(top = 8.dp, start = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             if (state.viewerFile.isNotBlank()) {
@@ -323,6 +328,7 @@ private fun PreviewOverlay(state: AppState, host: PlateHost, bottomInset: Dp) {
         }
         if (platesOpen) PlatesDialog(state, host) { platesOpen = false; host.preview = null; host.scene?.requestPreviewInfo() }
         if (state.stats != null) Row(Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            IconButton({ shareToolpaths(host) }, Modifier.flap()) { Icon(Icons.Default.ViewInAr, "Share toolpaths as OBJ", tint = Board.letter) }
             IconButton(host.shareGcode, Modifier.flap()) { Icon(Icons.Default.Share, "Share G-code", tint = Board.letter) }
             ExtendedFloatingActionButton(onClick = host.exportGcode, containerColor = Board.teal, contentColor = Board.flap,
                 shape = MaterialTheme.shapes.medium, text = { Text("EXPORT G-CODE", style = MaterialTheme.typography.labelLarge) },
@@ -338,4 +344,13 @@ private suspend fun exportEach(state: AppState, host: PlateHost): List<java.io.F
         val name = (o.name.ifBlank { "object" }.substringBeforeLast('.') + "_${i + 1}").replace(Regex("[^A-Za-z0-9._-]"), "_")
         java.io.File(dir, "$name.stl").also { f -> state.edit("export", "path" to f.path, "format" to "stl", "objects" to listOf(i)) }
     }.filter { it.exists() }
+}
+
+/** Writes the visible toolpaths to an OBJ + MTL (on the GL thread, where the preview lives) and shares both. */
+private fun shareToolpaths(host: PlateHost) {
+    val dir = java.io.File(host.cacheDir, "export").apply { mkdirs() }
+    val obj = java.io.File(dir, "toolpaths.obj")
+    host.scene?.query({ if (OrcaCore.exportToolpaths(obj.path)) "ok" else "" }) { r ->
+        if (r == "ok") host.shareFiles(listOf(obj, java.io.File(dir, "toolpaths.mtl")))
+    }
 }

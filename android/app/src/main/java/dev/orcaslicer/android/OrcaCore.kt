@@ -93,4 +93,8 @@ object OrcaCore {
     external fun previewSetViewType(type: Int)
     external fun previewToggleRole(role: Int)
     external fun previewToggleTravel()
+    /** {kind: "range", values, colors, log} or {kind: "list", colors} for a colour scheme. */
+    external fun previewLegend(type: Int): String
+    /** Visible toolpaths as OBJ (+ .mtl beside it). */
+    external fun exportToolpaths(path: String): Boolean
 }

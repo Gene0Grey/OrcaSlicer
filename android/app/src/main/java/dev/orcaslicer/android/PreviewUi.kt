@@ -1,6 +1,7 @@
 package dev.orcaslicer.android
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -96,8 +97,7 @@ fun ResultsBoard(state: AppState, info: PreviewInfo?, host: PlateHost) {
             viewType = t; host.scene?.onGl { OrcaCore.previewSetViewType(t) }
         }
     }
-    if (viewType != 1) Text("THE LEGEND BELOW LISTS LINE TYPES; THE PLATE SHOWS ${VIEW_TYPES[viewType].uppercase()}.",
-        Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.labelSmall, color = Board.steelLight)
+    if (viewType != 1 && viewType != 0) RangeLegend(host, viewType, VIEW_UNITS[viewType].orEmpty())
     // Legend: the departure table.
     Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 4.dp)) {
         Head("Line type", 2.2f); Head("Time", 1.1f); Head("%", 0.7f); Head("G", 0.7f); Head("Show", 0.8f)
@@ -107,6 +107,7 @@ fun ResultsBoard(state: AppState, info: PreviewInfo?, host: PlateHost) {
             hidden[r.role] != true) { v -> hidden[r.role] = !v; host.scene?.onGl { OrcaCore.previewToggleRole(r.role) } }
     }
     LegendRow("Travel", Board.steelMid, formatTime(stats.travelTime), "", "", travel) { v -> travel = v; host.scene?.onGl { OrcaCore.previewToggleTravel() } }
+    LayerActionsList(state) {}
     BoardRow("Total filament") { FlapCell("%.2f M   %.2f G".format(stats.meters, stats.grams), Modifier.weight(1f)) }
     BoardRow("Prepare time") { FlapCell(formatTime(stats.prepareTime.toDouble()), Modifier.weight(1f)) }
     // Per filament, as the desktop's filament table: length, weight (with flush), cost.
@@ -163,7 +164,8 @@ private fun LegendRow(name: String, swatch: androidx.compose.ui.graphics.Color, 
 
 /** Layer range (right edge) and moves within the top layer (bottom), with flap readouts. */
 @Composable
-fun PreviewSliders(stats: SliceStats?, info: PreviewInfo?, scene: SceneView?, bottomInset: Dp) {
+fun PreviewSliders(stats: SliceStats?, info: PreviewInfo?, scene: SceneView?, bottomInset: Dp,
+                   gcodes: List<LayerGcode> = emptyList(), onLayerAction: (layer: Int) -> Unit = {}) {
     if (stats == null || info == null) {
         if (stats != null) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { FlapCell("LOADING PREVIEW", color = Board.tealText) }
         return
@@ -187,14 +189,20 @@ fun PreviewSliders(stats: SliceStats?, info: PreviewInfo?, scene: SceneView?, bo
         if (layers > 1) Column(Modifier.align(Alignment.TopEnd).fillMaxHeight().padding(end = 6.dp, top = 80.dp, bottom = 236.dp),
             horizontalAlignment = Alignment.CenterHorizontally) {
             LayerFlap(range.endInclusive.roundToInt(), info.zs)
-            RangeSlider(
-                value = range, onValueChange = { r ->
-                    range = r
-                    scene?.onGl { OrcaCore.previewSetLayers(r.start.roundToInt(), r.endInclusive.roundToInt()) }
-                    refresh()
-                },
-                valueRange = 0f..(layers - 1).toFloat(), colors = sliderColors, modifier = Modifier.weight(1f).vertical(),
-            )
+            // Desktop "+" on the layer slider: pause, colour change or custom G-code at the top layer.
+            Box(Modifier.padding(vertical = 2.dp).size(36.dp).flap(Board.teal).clickable { onLayerAction(range.endInclusive.roundToInt()) },
+                contentAlignment = Alignment.Center) { Text("+", style = MaterialTheme.typography.titleMedium, color = Board.tealText) }
+            Row(Modifier.weight(1f)) {
+                LayerTicks(gcodes, info.zs, Modifier.fillMaxHeight())
+                RangeSlider(
+                    value = range, onValueChange = { r ->
+                        range = r
+                        scene?.onGl { OrcaCore.previewSetLayers(r.start.roundToInt(), r.endInclusive.roundToInt()) }
+                        refresh()
+                    },
+                    valueRange = 0f..(layers - 1).toFloat(), colors = sliderColors, modifier = Modifier.fillMaxHeight().vertical(),
+                )
+            }
             LayerFlap(range.start.roundToInt(), info.zs)
         }
         val m = move

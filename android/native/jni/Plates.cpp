@@ -5,6 +5,10 @@
 #include "Session.hpp"
 
 #include "libslic3r/Arrange.hpp"
+#include "libslic3r/CustomGCode.hpp"
+
+#include <algorithm>
+#include <cmath>
 
 using namespace Slic3r;
 using json = nlohmann::json;
@@ -97,6 +101,7 @@ Model plate_model(int p)
 {
     Session &s = g_session;
     Model out = s.model; // copy keeps the object IDs
+    out.curr_plate_index = p; // the plate's pauses / colour changes (plates_custom_gcodes)
     const Vec2d origin = s.plate_origin(p);
     for (int oi = int(out.objects.size()) - 1; oi >= 0; --oi) {
         ModelObject *o = out.objects[oi];
@@ -120,7 +125,11 @@ json plates_json()
         list.push_back({{"name", pl.name}, {"locked", pl.locked}, {"sliced", pl.sliced}, {"objects", instances_on(p).size()},
                         {"origin", {o.x(), o.y()}}});
     }
-    return {{"current", s.current}, {"plates", list}, {"viewer", s.viewer_result ? s.viewer_path : std::string()}};
+    json gcodes = json::array();
+    if (auto it = s.model.plates_custom_gcodes.find(s.current); it != s.model.plates_custom_gcodes.end())
+        for (const CustomGCode::Item &g : it->second.gcodes)
+            gcodes.push_back({{"z", g.print_z}, {"type", int(g.type)}, {"extruder", g.extruder}, {"color", g.color}, {"extra", g.extra}});
+    return {{"current", s.current}, {"plates", list}, {"gcodes", gcodes}, {"viewer", s.viewer_result ? s.viewer_path : std::string()}};
 }
 
 JNI(jstring, plates)(JNIEnv *env, jobject)
@@ -203,6 +212,23 @@ JNI(jstring, plateCmd)(JNIEnv *env, jobject, jstring jcmd, jstring jargs)
                 }
             }
             s.current = to;
+        } else if (cmd == "add_gcode" || cmd == "remove_gcode") {
+            // Pause / colour change / filament change / custom G-code at a layer (desktop layer slider "+").
+            CustomGCode::Info &info = s.model.plates_custom_gcodes[s.current];
+            const double z = a.value("z", 0.);
+            auto &g = info.gcodes;
+            g.erase(std::remove_if(g.begin(), g.end(), [z](const CustomGCode::Item &it) { return std::abs(it.print_z - z) < 1e-4; }), g.end());
+            if (cmd == "add_gcode") {
+                CustomGCode::Item it;
+                it.print_z  = z;
+                it.type     = CustomGCode::Type(a.value("type", 0));
+                it.extruder = a.value("extruder", 1);
+                it.color    = a.value("color", std::string());
+                it.extra    = a.value("extra", std::string());
+                g.push_back(it);
+                std::sort(g.begin(), g.end());
+            }
+            info.mode = s.bundle->filament_presets.size() > 1 ? CustomGCode::MultiAsSingle : CustomGCode::SingleExtruder;
         } else if (cmd == "arrange") {
             arrange_model(true);
         } else {

@@ -89,6 +89,8 @@ class AppState(private val context: Context) {
     val objectValues = mutableStateMapOf<Pair<Int, Int>, Map<String, String>>()
     var plates by mutableStateOf(listOf(PlateInfo("", false, false, 0, 0.0, 0.0)))
     var currentPlate by mutableIntStateOf(0)
+    /** The current plate's pauses / colour changes / custom G-code by height. */
+    var layerGcodes by mutableStateOf<List<LayerGcode>>(emptyList())
     /** The G-code file open in the viewer, "" when Preview shows a slice. */
     var viewerFile by mutableStateOf("")
     /** Bumped by every edit that makes the slice stale (drives background slicing). */
@@ -175,6 +177,9 @@ class AppState(private val context: Context) {
             PlateInfo(p.getString("name"), p.getBoolean("locked"), p.getBoolean("sliced"), p.getInt("objects"), origin.getDouble(0), origin.getDouble(1))
         }
         currentPlate = o.getInt("current")
+        layerGcodes = o.optJSONArray("gcodes")?.let { g -> (0 until g.length()).map { g.getJSONObject(it) }.map {
+            LayerGcode(it.getDouble("z"), it.getInt("type"), it.getInt("extruder"), it.optString("color"), it.optString("extra"))
+        } }.orEmpty()
         viewerFile = o.optString("viewer")
     }
 
