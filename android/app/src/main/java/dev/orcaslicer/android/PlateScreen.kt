@@ -103,14 +103,14 @@ fun PlateScreen(state: AppState, host: PlateHost, wide: Boolean) {
         val sheet = rememberBottomSheetScaffoldState()
         BottomSheetScaffold(
             scaffoldState = sheet,
-            sheetPeekHeight = if (prepare) SETUP_PEEK else RESULTS_PEEK,
+            sheetPeekHeight = if (prepare) (if (host.panelOpen) 0.dp else SETUP_PEEK) else RESULTS_PEEK,
             sheetContainerColor = Board.frame,
             sheetContentColor = Board.letter,
             sheetShape = MaterialTheme.shapes.large,
             sheetDragHandle = { BottomSheetDefaults.DragHandle(color = Board.steelMid) },
             containerColor = Board.flap,
             sheetContent = { Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) { panel() } },
-        ) { plate(if (prepare) SETUP_PEEK else RESULTS_PEEK) }
+        ) { plate(if (prepare) (if (host.panelOpen) 0.dp else SETUP_PEEK) else RESULTS_PEEK) }
     }
 }
 
@@ -164,7 +164,8 @@ private fun PrepareOverlay(state: AppState, host: PlateHost, bottomInset: Dp) {
             if (sel != null) ObjectBar(state, sel, host)
         }
         // Centred in the visible strip between the plate bar and the sheet peek.
-        ToolRail(state, Modifier.align(Alignment.CenterStart).padding(start = 8.dp, top = 56.dp, bottom = bottomInset)) { tools = true }
+        // Below the object bar when one is up, so the bar never covers the top keys.
+        ToolRail(state, Modifier.align(Alignment.CenterStart).padding(start = 8.dp, top = if (sel != null) 128.dp else 56.dp, bottom = bottomInset)) { tools = true }
         if (tools) ToolSheet(state, host, onPick = { p ->
             panel = p
             if (p == ToolPanel.Measure) { state.gizmoMode = 0; state.setGizmo(5); host.measure = null }
@@ -193,7 +194,8 @@ private fun PrepareOverlay(state: AppState, host: PlateHost, bottomInset: Dp) {
             ToolPanel.Text -> TextToolDialog(state) { panel = ToolPanel.None }
             else -> {}
         }
-        Column(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = bottomInset + 16.dp), horizontalAlignment = Alignment.End,
+        androidx.compose.runtime.SideEffect { host.panelOpen = panel == ToolPanel.Cut || panel == ToolPanel.Measure || host.brush.mode > 0 }
+        if (!host.panelOpen) Column(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = bottomInset + 16.dp), horizontalAlignment = Alignment.End,
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             ExtendedFloatingActionButton(
                 onClick = { if (state.objects.isNotEmpty() && !outside && state.sliceProgress == null) host.slice() },
@@ -218,8 +220,9 @@ private fun PlateBar(state: AppState, host: PlateHost) {
         var platesOpen by remember { mutableStateOf(false) }
         PlateSwitcher(state, host) { platesOpen = true }
         if (platesOpen) PlatesDialog(state, host) { platesOpen = false }
+        // With several plates the switcher needs the room; the plate list shows the counts.
         val n = state.plates.getOrNull(state.currentPlate)?.objects ?: 0
-        FlapCell(when (n) { 0 -> "EMPTY"; 1 -> "1 OBJ"; else -> "$n OBJ" }, style = MaterialTheme.typography.labelMedium)
+        if (state.plates.size == 1) FlapCell(when (n) { 0 -> "EMPTY"; 1 -> "1 OBJ"; else -> "$n OBJ" }, style = MaterialTheme.typography.labelMedium)
         Spacer(Modifier.weight(1f))
         BarIcon(Icons.AutoMirrored.Filled.Undo, "Undo", state.canUndo) { scope.launch { state.undo() } }
         BarIcon(Icons.AutoMirrored.Filled.Redo, "Redo", state.canRedo) { scope.launch { state.redo() } }
@@ -266,7 +269,7 @@ private fun MenuItem(label: String, icon: ImageVector, enabled: Boolean, onClick
 
 @Composable
 private fun BarIcon(icon: ImageVector, label: String, enabled: Boolean, onClick: () -> Unit) =
-    IconButton(onClick, enabled = enabled, colors = IconButtonDefaults.iconButtonColors(contentColor = Board.letter, disabledContentColor = Board.steelMid)) {
+    IconButton(onClick, Modifier.size(44.dp), enabled = enabled, colors = IconButtonDefaults.iconButtonColors(contentColor = Board.letter, disabledContentColor = Board.steelMid)) {
         Icon(icon, label)
     }
 
@@ -292,7 +295,7 @@ private fun ToolRail(state: AppState, modifier: Modifier, onTools: () -> Unit) {
             Surface(
                 onClick = { if (t.mode == 0) { if (state.gizmoMode != 0) state.setGizmo(state.gizmoMode) } else state.setGizmo(t.mode) },
                 enabled = enabled, color = Color.Transparent, shape = MaterialTheme.shapes.small,
-                modifier = Modifier.size(width = 60.dp, height = 58.dp).flap(if (active) Board.teal else null)
+                modifier = Modifier.size(width = 60.dp, height = 52.dp).flap(if (active) Board.teal else null)
                     .semantics { role = Role.Tab; selected = active; contentDescription = t.label },
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
@@ -304,7 +307,7 @@ private fun ToolRail(state: AppState, modifier: Modifier, onTools: () -> Unit) {
         }
         // Cut, simplify, boolean, measure, text, SVG, painting, variable layer height.
         Surface(onClick = onTools, color = Color.Transparent, shape = MaterialTheme.shapes.small,
-            modifier = Modifier.size(width = 60.dp, height = 58.dp).flap(if (state.gizmoMode >= 5) Board.teal else null).semantics { contentDescription = "Tools" }) {
+            modifier = Modifier.size(width = 60.dp, height = 52.dp).flap(if (state.gizmoMode >= 5) Board.teal else null).semantics { contentDescription = "Tools" }) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                 Icon(Icons.Default.Construction, null, tint = if (state.gizmoMode >= 5) Board.tealText else Board.letter, modifier = Modifier.size(22.dp))
                 Text("TOOLS", style = MaterialTheme.typography.labelSmall, color = if (state.gizmoMode >= 5) Board.tealText else Board.letter)
@@ -379,13 +382,18 @@ private fun PreviewOverlay(state: AppState, host: PlateHost, bottomInset: Dp) {
             }
         }
         if (platesOpen) PlatesDialog(state, host) { platesOpen = false; host.preview = null; host.scene?.requestPreviewInfo() }
-        if (state.stats != null) Row(Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (state.stats != null) Row(Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             IconButton(host.sendGcode, Modifier.flap()) { Icon(Icons.AutoMirrored.Filled.Send, "Send to printer", tint = Board.tealText) }
             IconButton({ shareToolpaths(host) }, Modifier.flap()) { Icon(Icons.Default.ViewInAr, "Share toolpaths as OBJ", tint = Board.letter) }
             IconButton(host.shareGcode, Modifier.flap()) { Icon(Icons.Default.Share, "Share G-code", tint = Board.letter) }
-            ExtendedFloatingActionButton(onClick = host.exportGcode, containerColor = Board.teal, contentColor = Board.flap,
-                shape = MaterialTheme.shapes.medium, text = { Text("EXPORT G-CODE", style = MaterialTheme.typography.labelLarge) },
-                icon = { Icon(Icons.Default.VerticalAlignBottom, null) }, modifier = Modifier.height(48.dp))
+            // Phones: the export key shrinks to its icon so the plate switcher on the left stays clear.
+            if (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 600)
+                ExtendedFloatingActionButton(onClick = host.exportGcode, containerColor = Board.teal, contentColor = Board.flap,
+                    shape = MaterialTheme.shapes.medium, text = { Text("EXPORT G-CODE", style = MaterialTheme.typography.labelLarge) },
+                    icon = { Icon(Icons.Default.VerticalAlignBottom, null) }, modifier = Modifier.height(48.dp))
+            else IconButton(host.exportGcode, Modifier.background(Board.teal, MaterialTheme.shapes.medium)) {
+                Icon(Icons.Default.VerticalAlignBottom, "Export G-code", tint = Board.flap)
+            }
         }
     }
 }

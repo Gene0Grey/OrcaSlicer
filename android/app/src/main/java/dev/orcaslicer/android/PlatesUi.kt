@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -52,12 +53,12 @@ fun PlateSwitcher(state: AppState, host: PlateHost, onOpen: () -> Unit) {
     val n = state.plates.size
     fun go(i: Int) = scope.launch { if (state.plateCmd("select", "index" to i)) { host.fit(state); host.preview = null; host.scene?.requestPreviewInfo() } }
     Row(verticalAlignment = Alignment.CenterVertically) {
-        if (n > 1) IconButton({ go((state.currentPlate - 1 + n) % n) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous plate", tint = Board.letter) }
+        if (n > 1) IconButton({ go((state.currentPlate - 1 + n) % n) }, Modifier.size(32.dp)) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous plate", tint = Board.letter) }
         Surface(onClick = onOpen, color = Color.Transparent, shape = MaterialTheme.shapes.small) {
-            FlapCell(if (n > 1) "PLATE %02d/%02d".format(state.currentPlate + 1, n) else "PLATE 01", color = Board.tealText,
+            FlapCell(if (n > 1) "PLATE ${state.currentPlate + 1}/$n" else "PLATE 01", color = Board.tealText,
                 border = if (state.plates.getOrNull(state.currentPlate)?.locked == true) Board.amber else null)
         }
-        if (n > 1) IconButton({ go((state.currentPlate + 1) % n) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next plate", tint = Board.letter) }
+        if (n > 1) IconButton({ go((state.currentPlate + 1) % n) }, Modifier.size(32.dp)) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next plate", tint = Board.letter) }
     }
 }
 

@@ -61,6 +61,7 @@ std::vector<ModelInstance *> arrange_model(bool spill)
     for (auto &[o, k] : instances_on(p)) {
         arrangement::ArrangePolygon ap;
         o->instances[k]->get_arrange_polygon(&ap);
+        ap.bed_idx = 0; // placeable (left UNARRANGED it is returned unplaced), as get_arrange_polys does
         polys.push_back(std::move(ap));
         insts.push_back(o->instances[k]);
     }
@@ -70,6 +71,7 @@ std::vector<ModelInstance *> arrange_model(bool spill)
             if (s.plate_of(*o, k) < 0) {
                 arrangement::ArrangePolygon ap;
                 o->instances[k]->get_arrange_polygon(&ap);
+        ap.bed_idx = 0; // placeable (left UNARRANGED it is returned unplaced), as get_arrange_polys does
                 polys.push_back(std::move(ap));
                 insts.push_back(o->instances[k]);
             }
@@ -151,7 +153,8 @@ JNI(jstring, plateCmd)(JNIEnv *env, jobject, jstring jcmd, jstring jargs)
         const int idx = a.value("index", s.current);
         if (idx < 0 || idx >= int(s.plates.size())) return to_j(env, json{{"error", "No such plate."}}.dump());
         if (cmd == "select") {
-            if (s.current != idx) { s.current = idx; ++s.preview_version; ++s.scene_version; }
+            // A new plate starts with nothing picked (the picked object stays on its own plate).
+            if (s.current != idx) { s.current = idx; s.select_only(-1); ++s.preview_version; ++s.scene_version; }
             s.viewer_result.reset();
             return to_j(env, plates_json().dump());
         }

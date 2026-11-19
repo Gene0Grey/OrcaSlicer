@@ -342,14 +342,15 @@ JNI(void, glRender)(JNIEnv *env, jobject, jint mode, jfloatArray jview, jfloatAr
         const bool live = mode == 1 || int(p) == gl.current_plate;
         if (gl.bed_fill.count) {
             glUniformMatrix4fv(gl.flat.mvp, 1, GL_FALSE, pm);
-            const std::array<float, 4> fill{0.165f, 0.176f, 0.192f, 1.f}; // brushed steel
+            // Brushed steel; pale steel on the light theme (light background).
+            const std::array<float, 4> fill = bg[0] > 0.5f ? std::array<float, 4>{0.80f, 0.81f, 0.83f, 1.f} : std::array<float, 4>{0.165f, 0.176f, 0.192f, 1.f};
             glUniform4fv(gl.flat.color, 1, fill.data());
             glBindBuffer(GL_ARRAY_BUFFER, gl.bed_fill.vbo);
             glEnableVertexAttribArray(0);
             glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
             glDrawArrays(GL_TRIANGLES, 0, gl.bed_fill.count);
         }
-        draw_lines(gl.bed_grid, pm, {0.26f, 0.28f, 0.30f, 1.f});
+        draw_lines(gl.bed_grid, pm, bg[0] > 0.5f ? std::array<float, 4>{0.68f, 0.70f, 0.72f, 1.f} : std::array<float, 4>{0.26f, 0.28f, 0.30f, 1.f});
         glLineWidth(3.f);
         draw_lines(gl.bed_border, pm, live ? std::array<float, 4>{0.0f, 0.59f, 0.53f, 1.f} : std::array<float, 4>{0.36f, 0.37f, 0.39f, 1.f});
         if (p == 0) {
