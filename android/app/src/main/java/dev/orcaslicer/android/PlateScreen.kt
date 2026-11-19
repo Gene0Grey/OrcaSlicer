@@ -95,10 +95,12 @@ fun PlateScreen(state: AppState, host: PlateHost, wide: Boolean) {
         }
     }
     if (wide) {
+        // The setup panel takes at most 40 % of the width, so the plate keeps most of a medium screen.
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) { val panelWidth = minOf(420.dp, maxWidth * 0.4f)
         Row(Modifier.fillMaxSize()) {
-            Column(Modifier.width(420.dp).fillMaxHeight().steel().verticalScroll(rememberScrollState())) { panel() }
+            Column(Modifier.width(panelWidth).fillMaxHeight().steel().verticalScroll(rememberScrollState())) { panel() }
             Box(Modifier.weight(1f)) { plate(0.dp) }
-        }
+        } }
     } else {
         val sheet = rememberBottomSheetScaffoldState()
         BottomSheetScaffold(
