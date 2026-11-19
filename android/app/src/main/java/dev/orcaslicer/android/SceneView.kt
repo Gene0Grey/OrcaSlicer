@@ -84,6 +84,8 @@ class SceneView(context: Context, val camera: OrbitCamera, private val dark: Boo
     var onPreviewInfo: (String) -> Unit = {}
     var onFit: () -> Unit = {}
     var onGizmoEnd: () -> Unit = {}
+    /** Measure tool (gizmoMode 5): result of a tap, as measurePick JSON. */
+    var onMeasure: (String) -> Unit = {}
     @Volatile var gizmoMode = 0
     private var dragging = false
     @Volatile private var wantPreviewInfo = false
@@ -136,7 +138,10 @@ class SceneView(context: Context, val camera: OrbitCamera, private val dark: Boo
         override fun onSingleTapUp(e: MotionEvent): Boolean {
             if (mode == 0) {
                 camera.update(width, height)
-                if (gizmoMode == 4) {
+                if (gizmoMode == 5) {
+                    val r = OrcaCore.measurePick(e.x, e.y, width, height, camera.view.clone(), camera.proj.clone())
+                    onMeasure(r); requestRender()
+                } else if (gizmoMode == 4) {
                     // Lay on face: the tapped face goes onto the bed.
                     if (OrcaCore.layOnFace(e.x, e.y, width, height, camera.view.clone(), camera.proj.clone()) >= 0) { onGizmoEnd(); requestRender() }
                 } else {
@@ -155,7 +160,7 @@ class SceneView(context: Context, val camera: OrbitCamera, private val dark: Boo
     })
 
     private fun gizmo(e: MotionEvent): Boolean {
-        if (mode != 0 || gizmoMode == 0) return false
+        if (mode != 0 || gizmoMode == 0 || gizmoMode == 5) return false
         camera.update(width, height)
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN ->

@@ -50,6 +50,11 @@ struct Session
     // Copied object settings (Copy / Paste Process Settings).
     Slic3r::DynamicPrintConfig                     clipboard;
     bool                                           has_clipboard = false;
+    // Tool overlays drawn in Prepare: the cut plane (world transform of the plane, Z up) and
+    // measure feature points.
+    bool                                           cut_preview = false;
+    Slic3r::Transform3d                            cut_plane   = Slic3r::Transform3d::Identity();
+    std::vector<Slic3r::Vec3d>                     marks;
     // Bumped when the plate or its objects change / when a new slice result is ready,
     // so the GL thread knows to rebuild its buffers.
     uint64_t                                       scene_version   = 1;

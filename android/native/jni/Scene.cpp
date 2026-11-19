@@ -353,6 +353,47 @@ JNI(void, glRender)(JNIEnv *env, jobject, jint mode, jfloatArray jview, jfloatAr
         glDepthMask(GL_TRUE);
         glDisableVertexAttribArray(0);
         glDisableVertexAttribArray(1);
+        // Tool overlays: the cut plane (translucent teal) and measure points (amber crosses).
+        {
+            std::lock_guard lock(g_session.mutex);
+            if (g_session.cut_preview) {
+                const double r = std::max(g_session.bed_rect().size().x(), g_session.bed_rect().size().y()) * 0.4;
+                std::vector<float> quad;
+                const Slic3r::Vec3d c[4] = {{-r, -r, 0}, {r, -r, 0}, {r, r, 0}, {-r, r, 0}};
+                for (int k : {0, 1, 2, 0, 2, 3}) {
+                    const Slic3r::Vec3d p = g_session.cut_plane * c[k];
+                    quad.insert(quad.end(), {float(p.x()), float(p.y()), float(p.z())});
+                }
+                Mesh m = upload(quad, 3);
+                glUseProgram(gl.flat.id);
+                glDepthMask(GL_FALSE);
+                glUniformMatrix4fv(gl.flat.mvp, 1, GL_FALSE, mvp);
+                const std::array<float, 4> col{0.0f, 0.59f, 0.53f, 0.35f};
+                glUniform4fv(gl.flat.color, 1, col.data());
+                glBindBuffer(GL_ARRAY_BUFFER, m.vbo);
+                glEnableVertexAttribArray(0);
+                glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
+                glDrawArrays(GL_TRIANGLES, 0, m.count);
+                glDepthMask(GL_TRUE);
+                release(m);
+            }
+            for (const Slic3r::Vec3d &p : g_session.marks) {
+                GizmoLines cross;
+                const float s = 3.f;
+                cross.xyz = {float(p.x()) - s, float(p.y()), float(p.z()), float(p.x()) + s, float(p.y()), float(p.z()),
+                             float(p.x()), float(p.y()) - s, float(p.z()), float(p.x()), float(p.y()) + s, float(p.z()),
+                             float(p.x()), float(p.y()), float(p.z()) - s, float(p.x()), float(p.y()), float(p.z()) + s};
+                cross.color = {1.0f, 0.69f, 0.0f, 1.f};
+                gizmo.push_back(cross);
+            }
+            if (g_session.marks.size() >= 2) {
+                GizmoLines line;
+                const Slic3r::Vec3d &a = g_session.marks.front(), &b = g_session.marks.back();
+                line.xyz = {float(a.x()), float(a.y()), float(a.z()), float(b.x()), float(b.y()), float(b.z())};
+                line.color = {1.0f, 0.69f, 0.0f, 1.f};
+                gizmo.push_back(line);
+            }
+        }
         // Gizmo handles on top of everything, thick for touch.
         if (!gizmo.empty()) {
             glDisable(GL_DEPTH_TEST);
@@ -422,156 +463,6 @@ JNI(jint, pick)(JNIEnv *env, jobject, jfloat x, jfloat y, jint w, jint h, jfloat
     return best;
 }
 
-// Layers and move ranges for the preview sliders. GL thread (the viewer lives there).
-JNI(jstring, previewInfo)(JNIEnv *env, jobject)
-{
-    json out;
-    out["loaded"] = gl.preview_loaded;
-    if (gl.preview_loaded) {
-        out["zs"]      = gl.viewer.get_layers_zs();
-        const auto lr  = gl.viewer.get_layers_view_range();
-        out["layers"]  = {lr[0], lr[1]};
-        const auto fr  = gl.viewer.get_view_full_range();
-        const auto vr  = gl.viewer.get_view_visible_range();
-        out["full"]    = {fr[0], fr[1]};
-        const auto er  = gl.viewer.get_view_enabled_range();
-        out["enabled"] = {er[0], er[1]};
-        out["visible"] = {vr[0], vr[1]};
-        json colors = json::object();
-        for (libvgcode::EGCodeExtrusionRole r : gl.viewer.get_extrusion_roles()) {
-            const auto &c = gl.viewer.get_extrusion_role_color(r);
-            const int slic3r_role = int(libvgcode::convert(r));
-            char hex[8];
-            snprintf(hex, sizeof(hex), "#%02X%02X%02X", c[0], c[1], c[2]);
-            colors[std::to_string(slic3r_role)] = {{"color", hex}, {"visible", gl.viewer.is_extrusion_role_visible(r)}};
-        }
-        out["roles"] = colors;
-    }
-    return env->NewStringUTF(out.dump().c_str());
-}
-
-// The moves slider's state: the top layer's move range and the tool at the current move. GL thread.
-JNI(jstring, previewCurrent)(JNIEnv *env, jobject)
-{
-    json out = json::object();
-    if (gl.preview_loaded) {
-        const auto er = gl.viewer.get_view_enabled_range();
-        const auto vr = gl.viewer.get_view_visible_range();
-        const libvgcode::PathVertex &v = gl.viewer.get_current_vertex();
-        out = {{"enabled", {er[0], er[1]}}, {"visible", {vr[0], vr[1]}},
-               {"x", v.position[0]}, {"y", v.position[1]}, {"z", v.position[2]},
-               {"speed", v.feedrate}, {"line", v.gcode_id}, {"width", v.width}, {"height", v.height}};
-    }
-    return env->NewStringUTF(out.dump().c_str());
-}
-
-JNI(void, previewSetLayers)(JNIEnv *, jobject, jint lo, jint hi)
-{
-    if (gl.preview_loaded) gl.viewer.set_layers_view_range(size_t(lo), size_t(hi));
-}
-
-JNI(void, previewSetMoves)(JNIEnv *, jobject, jint lo, jint hi)
-{
-    if (gl.preview_loaded) gl.viewer.set_view_visible_range(size_t(lo), size_t(hi));
-}
-
-JNI(void, previewSetViewType)(JNIEnv *, jobject, jint type)
-{
-    if (gl.preview_loaded) gl.viewer.set_view_type(libvgcode::EViewType(type));
-}
-
-// role: a Slic3r::ExtrusionRole, as in the slice statistics.
-JNI(void, previewToggleRole)(JNIEnv *, jobject, jint role)
-{
-    if (gl.preview_loaded) gl.viewer.toggle_extrusion_role_visibility(libvgcode::convert(Slic3r::ExtrusionRole(role)));
-}
-
-JNI(void, previewToggleTravel)(JNIEnv *, jobject)
-{
-    if (gl.preview_loaded) gl.viewer.toggle_option_visibility(libvgcode::EOptionType::Travels);
-}
-
-// The colour scheme's legend: a value range with its colours (speed, height, width, flow, fan,
-// temperature, ...), or the filament/tool colours. GL thread.
-JNI(jstring, previewLegend)(JNIEnv *env, jobject, jint type)
-{
-    json out = json::object();
-    if (!gl.preview_loaded) return env->NewStringUTF(out.dump().c_str());
-    auto hex = [](uint8_t r, uint8_t g, uint8_t b) {
-        char h[8];
-        snprintf(h, sizeof(h), "#%02X%02X%02X", r, g, b);
-        return std::string(h);
-    };
-    const auto vt = libvgcode::EViewType(type);
-    if (vt == libvgcode::EViewType::ColorPrint || vt == libvgcode::EViewType::Tool) {
-        json colors = json::array();
-        for (const auto &c : vt == libvgcode::EViewType::Tool ? gl.viewer.get_tool_colors() : gl.viewer.get_color_print_colors())
-            colors.push_back(hex(c[0], c[1], c[2]));
-        out = {{"kind", "list"}, {"colors", colors}};
-    } else if (vt != libvgcode::EViewType::Summary && vt != libvgcode::EViewType::FeatureType) {
-        const libvgcode::ColorRange &range = gl.viewer.get_color_range(vt);
-        json values = json::array(), colors = json::array();
-        std::vector<float> v = range.get_values();
-        if (v.size() < 2) v = {range.get_range()[0], range.get_range()[1]};
-        for (float x : v) {
-            const libvgcode::Color c = range.get_color_at(x);
-            values.push_back(x);
-            colors.push_back(hex(c[0], c[1], c[2]));
-        }
-        out = {{"kind", "range"}, {"values", values}, {"colors", colors}, {"log", range.get_type() == libvgcode::EColorRangeType::Logarithmic}};
-    }
-    return env->NewStringUTF(out.dump().c_str());
-}
-
-// Writes the visible toolpaths as an OBJ (+ MTL) of square tubes in their preview colours
-// (desktop "Export toolpaths as OBJ"). GL thread. Returns false when there is nothing to write.
-JNI(jboolean, exportToolpaths)(JNIEnv *env, jobject, jstring jpath)
-{
-    if (!gl.preview_loaded) return JNI_FALSE;
-    const char *c = env->GetStringUTFChars(jpath, nullptr);
-    const std::string path(c);
-    env->ReleaseStringUTFChars(jpath, c);
-    const std::string mtl_path = path.substr(0, path.find_last_of('.')) + ".mtl";
-    FILE *obj = fopen(path.c_str(), "w"), *mtl = fopen(mtl_path.c_str(), "w");
-    if (!obj || !mtl) { if (obj) fclose(obj); if (mtl) fclose(mtl); return JNI_FALSE; }
-    fprintf(obj, "# OrcaSlicer toolpaths
-mtllib %s
-", mtl_path.substr(mtl_path.find_last_of('/') + 1).c_str());
-    std::map<uint32_t, int> materials;
-    const auto vr = gl.viewer.get_view_visible_range();
-    size_t vertices = 0;
-    for (size_t i = std::max<size_t>(vr[0], 1); i <= vr[1] && i < gl.viewer.get_vertices_count(); ++i) {
-        const libvgcode::PathVertex &a = gl.viewer.get_vertex_at(i - 1), &b = gl.viewer.get_vertex_at(i);
-        if (!b.is_extrusion() || !gl.viewer.is_extrusion_role_visible(b.role)) continue;
-        const libvgcode::Color col = gl.viewer.get_vertex_color(b);
-        const uint32_t key = (uint32_t(col[0]) << 16) | (uint32_t(col[1]) << 8) | col[2];
-        if (!materials.count(key)) {
-            const int id = int(materials.size());
-            materials[key] = id;
-            fprintf(mtl, "newmtl m%d
-Kd %.3f %.3f %.3f
-", id, col[0] / 255.f, col[1] / 255.f, col[2] / 255.f);
-        }
-        const Slic3r::Vec3f p0(a.position[0], a.position[1], a.position[2]), p1(b.position[0], b.position[1], b.position[2]);
-        Slic3r::Vec3f d = p1 - p0;
-        d.z() = 0.f;
-        if (d.norm() < 1e-6f) continue;
-        const Slic3r::Vec3f side = Slic3r::Vec3f(-d.y(), d.x(), 0.f).normalized() * (0.5f * b.width);
-        const Slic3r::Vec3f down(0.f, 0.f, -b.height);
-        const Slic3r::Vec3f q[8] = {p0 + side, p0 - side, p0 - side + down, p0 + side + down,
-                                    p1 + side, p1 - side, p1 - side + down, p1 + side + down};
-        for (const auto &v : q) fprintf(obj, "v %.3f %.3f %.3f
-", v.x(), v.y(), v.z());
-        fprintf(obj, "usemtl m%d
-", materials[key]);
-        const size_t o = vertices + 1;
-        const int f[6][4] = {{0, 4, 5, 1}, {1, 5, 6, 2}, {2, 6, 7, 3}, {3, 7, 4, 0}, {0, 1, 2, 3}, {4, 7, 6, 5}};
-        for (const auto &face : f)
-            fprintf(obj, "f %zu %zu %zu %zu
-", o + face[0], o + face[1], o + face[2], o + face[3]);
-        vertices += 8;
-    }
-    fclose(obj);
-    fclose(mtl);
-    return vertices > 0 ? JNI_TRUE : JNI_FALSE;
-}
+// The preview viewer, for the preview calls in Preview.cpp (GL thread).
+libvgcode::Viewer &preview_viewer() { return gl.viewer; }
+bool preview_ready() { return gl.preview_loaded; }

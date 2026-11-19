@@ -242,6 +242,16 @@ class AppState(private val context: Context) {
 
     fun cancelSlice() = OrcaCore.cancelSlice()
 
+    /** Geometry tools (Tools.cpp); false when refused (the reason is shown). */
+    suspend fun tool(cmd: String, vararg args: Pair<String, Any?>): Boolean = withContext(Dispatchers.IO) {
+        val a = JSONObject(); args.forEach { (k, v) -> a.put(k, v) }
+        val r = OrcaCore.tool(cmd, a.toString())
+        if (r.startsWith("{")) { error = JSONObject(r).optString("error"); return@withContext false }
+        applyObjects(r)
+        if (cmd != "cut_preview" && cmd != "measure_clear") { objectValues.clear(); invalidate() }
+        true
+    }
+
     /** Runs an object menu command (Edit.cpp); false when it was refused (the reason is shown). */
     suspend fun edit(cmd: String, vararg args: Pair<String, Any?>): Boolean = withContext(Dispatchers.IO) {
         val a = JSONObject()

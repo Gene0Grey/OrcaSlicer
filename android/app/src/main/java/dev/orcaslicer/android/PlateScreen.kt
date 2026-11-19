@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.filled.Construction
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
@@ -122,6 +123,7 @@ private fun SceneHost(state: AppState, host: PlateHost) {
             v.onFit = { host.fit(state) }
             v.onPreviewInfo = { host.preview = PreviewInfo.parse(it) }
             v.onGizmoEnd = { scope.launch { state.afterGizmo() } }
+            v.onMeasure = { host.measure = org.json.JSONObject(it) }
             v.mode = if (state.screen == Screen.Preview) 1 else 0
             v.gizmoMode = state.gizmoMode
             host.scene = v
@@ -134,6 +136,9 @@ private fun SceneHost(state: AppState, host: PlateHost) {
 @Composable
 private fun PrepareOverlay(state: AppState, host: PlateHost, bottomInset: Dp) {
     val scope = rememberCoroutineScope()
+    var tools by remember { mutableStateOf(false) }
+    var panel by remember { mutableStateOf(ToolPanel.None) }
+    var svg by remember { mutableStateOf<String?>(null) }
     val sel = state.objects.getOrNull(state.selected)
     val outside = state.objects.any { it.outside }
     Box(Modifier.fillMaxSize()) {
@@ -141,6 +146,7 @@ private fun PrepareOverlay(state: AppState, host: PlateHost, bottomInset: Dp) {
             PlateBar(state, host)
             val hint = when {
                 state.gizmoMode == 4 -> "Tap a face to lay it on the plate"
+                state.gizmoMode == 5 -> "Tap a point, edge, circle or face; then a second one"
                 state.gizmoMode != 0 && sel == null -> "Tap an object to pick it"
                 state.gizmoMode == 1 -> "Drag the object to slide it, or an arrow for one axis"
                 state.gizmoMode == 2 -> "Drag a ring to turn it, 5 degree steps"
@@ -153,7 +159,23 @@ private fun PrepareOverlay(state: AppState, host: PlateHost, bottomInset: Dp) {
             if (sel != null) ObjectBar(state, sel, host)
         }
         // Centred in the visible strip between the plate bar and the sheet peek.
-        ToolRail(state, Modifier.align(Alignment.CenterStart).padding(start = 8.dp, top = 56.dp, bottom = bottomInset))
+        ToolRail(state, Modifier.align(Alignment.CenterStart).padding(start = 8.dp, top = 56.dp, bottom = bottomInset)) { tools = true }
+        if (tools) ToolSheet(state, host, onPick = { p ->
+            panel = p
+            if (p == ToolPanel.Measure) { state.gizmoMode = 0; state.setGizmo(5); host.measure = null }
+        }, onSvg = { svg = it }, onPaint = { host.paint(it) }, onVariableLayers = { host.variableLayers() }) { tools = false }
+        svg?.let { SvgToolDialog(state, it) { svg = null } }
+        when (panel) {
+            ToolPanel.Cut -> CutPanel(state, Modifier.align(Alignment.BottomCenter).padding(bottom = bottomInset)) { panel = ToolPanel.None }
+            ToolPanel.Measure -> MeasurePanel(host.measure, Modifier.align(Alignment.BottomCenter).padding(bottom = bottomInset),
+                onClear = { scope.launch { state.tool("measure_clear") }; host.measure = null; host.scene?.requestRender() }) {
+                scope.launch { state.tool("measure_clear") }; host.measure = null; state.setGizmo(5); panel = ToolPanel.None
+            }
+            ToolPanel.Simplify -> SimplifyDialog(state) { panel = ToolPanel.None }
+            ToolPanel.Boolean -> BooleanDialog(state) { panel = ToolPanel.None }
+            ToolPanel.Text -> TextToolDialog(state) { panel = ToolPanel.None }
+            else -> {}
+        }
         Column(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = bottomInset + 16.dp), horizontalAlignment = Alignment.End,
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             ExtendedFloatingActionButton(
@@ -240,7 +262,7 @@ private val TOOLS = listOf(
 
 /** The desktop's left gizmo toolbar as a column of flap keys; the live tool is lit teal. */
 @Composable
-private fun ToolRail(state: AppState, modifier: Modifier) {
+private fun ToolRail(state: AppState, modifier: Modifier, onTools: () -> Unit) {
     Column(modifier.background(Board.flap.copy(alpha = 0.86f), MaterialTheme.shapes.medium).padding(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         TOOLS.forEach { t ->
             val active = state.gizmoMode == t.mode
@@ -256,6 +278,14 @@ private fun ToolRail(state: AppState, modifier: Modifier) {
                     Icon(t.icon, null, tint = c, modifier = Modifier.size(22.dp))
                     Text(t.label.uppercase(), style = MaterialTheme.typography.labelSmall, color = c, textAlign = TextAlign.Center, maxLines = 1)
                 }
+            }
+        }
+        // Cut, simplify, boolean, measure, text, SVG, painting, variable layer height.
+        Surface(onClick = onTools, color = Color.Transparent, shape = MaterialTheme.shapes.small,
+            modifier = Modifier.size(width = 60.dp, height = 58.dp).flap(if (state.gizmoMode >= 5) Board.teal else null).semantics { contentDescription = "Tools" }) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                Icon(Icons.Default.Construction, null, tint = if (state.gizmoMode >= 5) Board.tealText else Board.letter, modifier = Modifier.size(22.dp))
+                Text("TOOLS", style = MaterialTheme.typography.labelSmall, color = if (state.gizmoMode >= 5) Board.tealText else Board.letter)
             }
         }
     }

@@ -78,6 +78,14 @@ object OrcaCore {
     external fun gizmoBegin(x: Float, y: Float, width: Int, height: Int, view: FloatArray, proj: FloatArray): Int
     external fun gizmoDrag(x: Float, y: Float, width: Int, height: Int, view: FloatArray, proj: FloatArray)
     external fun gizmoEnd()
+
+    // Tools.cpp
+    /** cut_preview / cut / simplify / boolean / text / svg / measure_clear; returns objects or {"error"} */
+    external fun tool(cmd: String, args: String): String
+    /** [{name, path}] of the system fonts */
+    external fun fonts(): String
+    /** {features: [...], result: {distance, distanceInfinite, xyz, angle}} */
+    external fun measurePick(x: Float, y: Float, width: Int, height: Int, view: FloatArray, proj: FloatArray): String
     /** Rotates the tapped object so the tapped face lies on the bed; returns its index or -1. */
     external fun layOnFace(x: Float, y: Float, width: Int, height: Int, view: FloatArray, proj: FloatArray): Int
 
