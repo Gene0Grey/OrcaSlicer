@@ -35,6 +35,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -70,16 +71,25 @@ fun Sidebar(state: AppState, host: PlateHost) {
         IconButton(host.addPrinter) { Icon(Icons.Default.Add, "Choose another printer brand", tint = Board.steelLight) }
         IconButton({ host.editPreset(OrcaCore.KIND_PRINTER) }) { Icon(Icons.Default.Edit, "Printer settings", tint = Board.steelLight) }
     }
+    var colorSlot by remember { mutableIntStateOf(-1) }
+    var flush by remember { mutableStateOf(false) }
+    var searchAll by remember { mutableStateOf(false) }
     p.slots.firstOrNull()?.let { slot ->
         BoardRow("Filament", labelWidth = 76.dp) {
-            Swatch(slot.color, 1)
+            Swatch(slot.color, 1, Modifier.clickable { colorSlot = 0 })
             PresetSelector(state, OrcaCore.KIND_FILAMENT, slot.name, p.filaments, p.filamentDirty, slot = 0, modifier = Modifier.weight(1f))
-            IconButton({ host.editPreset(OrcaCore.KIND_FILAMENT) }) { Icon(Icons.Default.Edit, "Filament settings", tint = Board.steelLight) }
+            IconButton({ scope.launch { state.editFilamentSlot(0) }; host.editPreset(OrcaCore.KIND_FILAMENT) }) { Icon(Icons.Default.Edit, "Filament settings", tint = Board.steelLight) }
         }
     }
     BoardRow("Process", labelWidth = 76.dp) {
         PresetSelector(state, OrcaCore.KIND_PROCESS, p.process, p.processes, p.processDirty, modifier = Modifier.weight(1f))
+        PresetManageMenu(state, host, OrcaCore.KIND_PROCESS)
     }
+    if (colorSlot >= 0) ColorPickerDialog(p.slots.getOrNull(colorSlot)?.color ?: "#26A69A", { colorSlot = -1 }) { hex ->
+        val s = colorSlot; scope.launch { state.setFilamentColor(s, hex) }
+    }
+    if (flush) FlushDialog(state) { flush = false }
+    if (searchAll) SearchAllDialog(state) { searchAll = false }
 
     state.defs["curr_bed_type"]?.let { def ->
         BoardRow("Plate", labelWidth = 76.dp) {
@@ -90,20 +100,23 @@ fun Sidebar(state: AppState, host: PlateHost) {
     }
 
     BoardHeading("Filaments") {
+        if (p.slots.size > 1) TextButton({ flush = true }) { Text("FLUSHING", color = Board.tealText) }
         IconButton({ scope.launch { state.setFilamentCount(p.slots.size - 1) } }, enabled = p.slots.size > 1) { Icon(Icons.Default.Remove, "Remove filament slot") }
         IconButton({ scope.launch { state.setFilamentCount(p.slots.size + 1) } }) { Icon(Icons.Default.Add, "Add filament slot") }
     }
     p.slots.drop(1).forEachIndexed { j, slot ->
         val i = j + 1
         BoardRow("Slot ${i + 1}", labelWidth = 76.dp) {
-            Swatch(slot.color, i + 1)
+            Swatch(slot.color, i + 1, Modifier.clickable { colorSlot = i })
             PresetSelector(state, OrcaCore.KIND_FILAMENT, slot.name, p.filaments, false, slot = i, modifier = Modifier.weight(1f))
+            IconButton({ scope.launch { state.editFilamentSlot(i) }; host.editPreset(OrcaCore.KIND_FILAMENT) }) { Icon(Icons.Default.Edit, "Filament ${i + 1} settings", tint = Board.steelLight) }
         }
     }
     if (p.slots.size == 1) Text("ONE FILAMENT. ADD SLOTS FOR MULTI-COLOUR.", Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
         style = MaterialTheme.typography.labelSmall, color = Board.steelMid)
 
     BoardHeading("Process") {
+        IconButton({ searchAll = true }) { Icon(Icons.Default.Search, "Search all settings", tint = Board.steelLight) }
         Text("ADVANCED", style = MaterialTheme.typography.labelMedium, color = if (state.advanced) Board.tealText else Board.steelLight)
         Switch(state.advanced, state::saveAdvanced, Modifier.padding(horizontal = 8.dp), colors = switchColors)
     }
@@ -112,8 +125,8 @@ fun Sidebar(state: AppState, host: PlateHost) {
 }
 
 @Composable
-fun Swatch(hex: String, number: Int) =
-    Box(Modifier.size(width = 28.dp, height = 40.dp).background(parseHex(hex), MaterialTheme.shapes.extraSmall), contentAlignment = Alignment.Center) {
+fun Swatch(hex: String, number: Int, modifier: Modifier = Modifier) =
+    Box(modifier.size(width = 28.dp, height = 40.dp).background(parseHex(hex), MaterialTheme.shapes.extraSmall), contentAlignment = Alignment.Center) {
         Text("$number", style = MaterialTheme.typography.labelLarge, color = Board.flap)
     }
 
@@ -146,15 +159,27 @@ fun Dropdown(selected: String, options: List<String>, modifier: Modifier = Modif
 
 /** Full-screen settings for a preset kind (printer / filament), opened by the pencil buttons. */
 @Composable
-fun PresetEditorDialog(state: AppState, kind: Int, onClose: () -> Unit) {
+fun PresetEditorDialog(state: AppState, host: PlateHost, kind: Int, onClose: () -> Unit) {
     val p = state.presets
+    val scope = rememberCoroutineScope()
     Dialog(onClose, DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = Board.ground) {
             Column {
                 DialogBar(if (kind == OrcaCore.KIND_PRINTER) "Printer settings" else "Filament settings", Icons.AutoMirrored.Filled.ArrowBack, onClose)
                 BoardRow(if (kind == OrcaCore.KIND_PRINTER) "Printer" else "Filament", labelWidth = 76.dp) {
                     if (kind == OrcaCore.KIND_PRINTER) PresetSelector(state, kind, p.printer, p.printers, p.printerDirty, modifier = Modifier.weight(1f))
-                    else PresetSelector(state, kind, p.slots.firstOrNull()?.name ?: "", p.filaments, p.filamentDirty, modifier = Modifier.weight(1f))
+                    else PresetSelector(state, kind, p.slots.getOrNull(state.filamentSlot)?.name ?: "", p.filaments, p.filamentDirty,
+                        slot = state.filamentSlot, modifier = Modifier.weight(1f))
+                    PresetManageMenu(state, host, kind)
+                }
+                // Which filament slot / extruder these settings are for (desktop per-slot combos, Extruder N pages).
+                if (kind == OrcaCore.KIND_FILAMENT && p.slots.size > 1) BoardRow("Slot", labelWidth = 76.dp) {
+                    val names = p.slots.indices.map { "FILAMENT ${it + 1}" }
+                    Dropdown(names[state.filamentSlot.coerceIn(0, names.lastIndex)], names, Modifier.weight(1f)) { i -> scope.launch { state.editFilamentSlot(i) } }
+                }
+                if (kind == OrcaCore.KIND_PRINTER && p.extruders > 1) BoardRow("Extruder", labelWidth = 76.dp) {
+                    val names = (1..p.extruders).map { "EXTRUDER $it" }
+                    Dropdown(names[state.extruderIndex.coerceIn(0, names.lastIndex)], names, Modifier.weight(1f)) { i -> scope.launch { state.setExtruder(i) } }
                 }
                 LazyColumn { item { SettingsPages(state, kind) } }
             }

@@ -223,7 +223,7 @@ fun App(state: AppState) {
 
     if (state.presets.printer.isEmpty() && state.busy == null && state.error == null) picker = true
     if (picker) PrinterPicker(state) { picker = false }
-    editor?.let { PresetEditorDialog(state, it) { editor = null } }
+    editor?.let { PresetEditorDialog(state, host, it) { editor = null } }
     if (transform && state.selected >= 0) TransformDialog(state) { transform = false }
     state.error?.let { msg ->
         AlertDialog(onDismissRequest = { state.error = null }, confirmButton = { TextButton({ state.error = null }) { Text("OK") } },

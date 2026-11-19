@@ -22,8 +22,23 @@ object OrcaCore {
     external fun selectPreset(kind: Int, slot: Int, name: String): String
     external fun setFilamentCount(count: Int): String
     external fun setBedType(type: Int): String
-    external fun values(kind: Int): String
-    external fun setValue(kind: Int, key: String, value: String): String?
+    /** index: the extruder whose per-extruder values to show (printer settings), else 0 */
+    external fun values(kind: Int, index: Int): String
+    external fun setValue(kind: Int, key: String, value: String, index: Int): String?
+
+    // Presets.cpp
+    external fun setFilamentColor(slot: Int, hex: String): String
+    /** {matrix: n*n, multiplier, count} */
+    external fun flushVolumes(): String
+    /** Empty matrix = recalculate from the filament colours. */
+    external fun setFlushVolumes(matrix: DoubleArray, multiplier: Double)
+    external fun editFilamentSlot(slot: Int): String
+    external fun renamePreset(kind: Int, name: String): String
+    external fun deletePreset(kind: Int): String
+    external fun exportPreset(kind: Int, path: String): String
+    external fun importPresets(path: String): String
+    /** [{key, a, b}] */
+    external fun comparePresets(kind: Int, a: String, b: String): String
     external fun discardChanges(kind: Int)
     external fun savePreset(kind: Int, name: String): String
 

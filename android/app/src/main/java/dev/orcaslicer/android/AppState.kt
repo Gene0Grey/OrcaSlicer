@@ -36,7 +36,7 @@ data class PresetsState(
     val printer: String = "", val printers: List<PresetItem> = emptyList(), val printerDirty: Boolean = false,
     val process: String = "", val processes: List<PresetItem> = emptyList(), val processDirty: Boolean = false,
     val slots: List<FilamentSlot> = emptyList(), val filaments: List<PresetItem> = emptyList(), val filamentDirty: Boolean = false,
-    val bed: List<Pair<Double, Double>> = emptyList(), val bedHeight: Double = 250.0, val bedType: Int = 0,
+    val bed: List<Pair<Double, Double>> = emptyList(), val bedHeight: Double = 250.0, val bedType: Int = 0, val extruders: Int = 1,
 )
 
 /** type: 0 part, 1 negative part, 2 modifier, 3 support blocker, 4 support enforcer (ModelVolumeType). */
@@ -133,7 +133,7 @@ class AppState(private val context: Context) {
     suspend fun setBedType(t: Int) = withContext(Dispatchers.IO) { applyState(OrcaCore.setBedType(t)) }
 
     suspend fun setValue(kind: Int, key: String, value: String) = withContext(Dispatchers.IO) {
-        OrcaCore.setValue(kind, key, value)?.let { error = it }
+        OrcaCore.setValue(kind, key, value, if (kind == OrcaCore.KIND_PRINTER) extruderIndex else 0)?.let { error = it }
         applyState(OrcaCore.state())
         invalidate()
     }
@@ -226,6 +226,16 @@ class AppState(private val context: Context) {
         err.isEmpty()
     }
 
+    suspend fun setFilamentColor(slot: Int, hex: String) = withContext(Dispatchers.IO) { applyState(OrcaCore.setFilamentColor(slot, hex)); invalidate() }
+    suspend fun editFilamentSlot(slot: Int) = withContext(Dispatchers.IO) { filamentSlot = slot; applyState(OrcaCore.editFilamentSlot(slot)) }
+    suspend fun setExtruder(i: Int) = withContext(Dispatchers.IO) { extruderIndex = i; refreshValues(OrcaCore.KIND_PRINTER) }
+    suspend fun renamePreset(kind: Int, name: String) = withContext(Dispatchers.IO) { applyState(OrcaCore.renamePreset(kind, name)) }
+    suspend fun deletePreset(kind: Int) = withContext(Dispatchers.IO) { applyState(OrcaCore.deletePreset(kind)); invalidate() }
+    suspend fun exportPreset(kind: Int, f: File): Boolean = withContext(Dispatchers.IO) {
+        val err = OrcaCore.exportPreset(kind, f.path); if (err.isNotEmpty()) error = err; err.isEmpty()
+    }
+    suspend fun importPresets(f: File) = withContext(Dispatchers.IO) { applyState(OrcaCore.importPresets(f.path)) }
+
     fun saveAutoSlice(v: Boolean) { autoSlice = v; prefs.edit().putBoolean("auto_slice", v).apply() }
 
     suspend fun select(index: Int) = withContext(Dispatchers.IO) { OrcaCore.select(index); refreshObjects() }
@@ -294,8 +304,12 @@ class AppState(private val context: Context) {
         invalidate()
     }
 
+    /** The filament slot the filament settings edit, and the extruder the printer settings show. */
+    var filamentSlot by mutableIntStateOf(0)
+    var extruderIndex by mutableIntStateOf(0)
+
     fun refreshValues(kind: Int) {
-        values[kind] = JSONObject(OrcaCore.values(kind)).let { o -> o.keys().asSequence().associateWith { o.getString(it) } }
+        values[kind] = JSONObject(OrcaCore.values(kind, if (kind == OrcaCore.KIND_PRINTER) extruderIndex else 0)).let { o -> o.keys().asSequence().associateWith { o.getString(it) } }
     }
 
     private fun refreshObjects() = applyObjects(OrcaCore.objects())
@@ -330,7 +344,7 @@ class AppState(private val context: Context) {
             slots = fl.getJSONArray("slots").let { a -> (0 until a.length()).map { a.getJSONObject(it) }.map { FilamentSlot(it.getString("name"), it.getString("color")) } },
             filaments = items(fl), filamentDirty = fl.getBoolean("dirty"),
             bed = bed.getJSONArray("area").let { a -> (0 until a.length()).map { a.getJSONArray(it) }.map { it.getDouble(0) to it.getDouble(1) } },
-            bedHeight = bed.getDouble("height"), bedType = s.optInt("bedType", 0),
+            bedHeight = bed.getDouble("height"), bedType = s.optInt("bedType", 0), extruders = s.optInt("extruders", 1),
         )
         for (k in 0..2) refreshValues(k)
     }

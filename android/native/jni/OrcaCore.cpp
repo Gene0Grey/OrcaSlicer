@@ -89,6 +89,8 @@ void select_printer_defaults(PresetBundle &b)
     b.update_multi_material_filament_presets();
 }
 
+} // namespace
+
 json state_json()
 {
     PresetBundle &b = *g_session.bundle;
@@ -113,10 +115,13 @@ json state_json()
         for (const Vec2d &p : pa->values)
             area.push_back({p.x(), p.y()});
     s["bed"] = {{"area", area}, {"height", pc.opt_float("printable_height")}};
+    if (const auto *nd = pc.option<ConfigOptionFloats>("nozzle_diameter")) s["extruders"] = nd->values.size();
     if (const auto *bt = b.project_config.option<ConfigOptionEnum<BedType>>("curr_bed_type"))
         s["bedType"] = int(bt->value);
     return s;
 }
+
+namespace {
 
 json option_defs_json()
 {
@@ -265,9 +270,9 @@ JNI(jstring, setBedType)(JNIEnv *env, jobject, jint type)
     return to_j(env, state_json().dump());
 }
 
-// The edited preset's values. Per-extruder/per-filament vectors show their first element (the
-// panels edit one extruder and the selected filament); bed shapes (points) stay whole.
-JNI(jstring, values)(JNIEnv *env, jobject, jint kind)
+// The edited preset's values. Per-extruder/per-filament vectors show element `index` (the
+// extruder being edited; filament presets hold one value); bed shapes (points) stay whole.
+JNI(jstring, values)(JNIEnv *env, jobject, jint kind, jint index)
 {
     std::lock_guard lock(g_session.mutex);
     const DynamicPrintConfig &c = collection(kind)->get_edited_preset().config;
@@ -276,7 +281,7 @@ JNI(jstring, values)(JNIEnv *env, jobject, jint kind)
         const ConfigOption *opt = c.option(key);
         if (opt->is_vector() && opt->type() != coPoints) {
             const auto v = static_cast<const ConfigOptionVectorBase *>(opt)->vserialize();
-            out[key] = v.empty() ? std::string() : v.front();
+            out[key] = v.empty() ? std::string() : v[std::min(v.size() - 1, size_t(std::max(0, int(index))))];
         } else {
             out[key] = opt->serialize();
         }
@@ -284,7 +289,7 @@ JNI(jstring, values)(JNIEnv *env, jobject, jint kind)
     return to_j(env, out.dump());
 }
 
-JNI(jstring, setValue)(JNIEnv *env, jobject, jint kind, jstring jkey, jstring jvalue)
+JNI(jstring, setValue)(JNIEnv *env, jobject, jint kind, jstring jkey, jstring jvalue, jint index)
 {
     std::lock_guard lock(g_session.mutex);
     try {
@@ -294,16 +299,19 @@ JNI(jstring, setValue)(JNIEnv *env, jobject, jint kind, jstring jkey, jstring jv
         ConfigOption *opt = p.config.option(key, true);
         if (opt == nullptr)
             return to_j(env, "Unknown option " + key);
+        const size_t i = size_t(std::max(0, int(index)));
         if (opt->type() == coStrings) {
             auto &vals = static_cast<ConfigOptionStrings *>(opt)->values;
-            if (vals.empty()) vals.push_back(value); else vals.front() = value;
+            if (vals.size() <= i) vals.resize(i + 1, vals.empty() ? std::string() : vals.back());
+            vals[i] = value;
         } else if (opt->is_vector() && opt->type() != coPoints) {
-            // Replace the first element, keep the others (other extruders / filaments).
+            // Replace element i, keep the others (other extruders / filaments).
             auto vals = static_cast<const ConfigOptionVectorBase *>(opt)->vserialize();
-            if (vals.empty()) vals.push_back(value); else vals.front() = value;
+            if (vals.size() <= i) vals.resize(i + 1, vals.empty() ? std::string() : vals.back());
+            vals[i] = value;
             std::string joined;
-            for (size_t i = 0; i < vals.size(); ++i)
-                joined += (i ? "," : "") + vals[i];
+            for (size_t k = 0; k < vals.size(); ++k)
+                joined += (k ? "," : "") + vals[k];
             p.config.set_deserialize(key, joined, ctx);
         } else {
             p.config.set_deserialize(key, value, ctx);
