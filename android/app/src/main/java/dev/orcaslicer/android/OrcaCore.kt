@@ -90,6 +90,8 @@ object OrcaCore {
     external fun brimEar(cmd: Int, x: Float, y: Float, width: Int, height: Int, view: FloatArray, proj: FloatArray, radius: Float): Int
     /** get / adaptive / smooth / adjust / reset; {profile, min, max, layer, height} */
     external fun layerProfile(cmd: String, args: String): String
+    /** Bakes a greyscale PNG height map over the picked object; projection 0 triplanar, 1 cylindrical, 2 spherical. "" or an error. */
+    external fun textureDisplace(png: String, depth: Float, tile: Float, rotation: Float, invert: Boolean, projection: Int, subdivide: Int): String
 
     // Tools.cpp
     /** cut_preview / cut / simplify / boolean / text / svg / measure_clear; returns objects or {"error"} */

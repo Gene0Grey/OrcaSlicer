@@ -6,7 +6,11 @@
 
 #include "libslic3r/BrimEarsPoint.hpp"
 #include "libslic3r/Slicing.hpp"
+#include "libslic3r/TextureDisplacement.hpp"
 #include "libslic3r/TriangleSelector.hpp"
+
+#include <fstream>
+#include <iterator>
 
 using namespace Slic3r;
 using json = nlohmann::json;
@@ -173,5 +177,55 @@ JNI(jstring, layerProfile)(JNIEnv *env, jobject, jstring jcmd, jstring jargs)
                               {"layer", sp.layer_height}, {"height", sp.object_print_z_height()}}.dump());
     } catch (const std::exception &e) {
         return to_j(env, json{{"error", e.what()}}.dump());
+    }
+}
+
+// Texture displacement (desktop Texture Displacement tool, whole-object version): a grayscale PNG
+// height map raised over every solid part of the picked object, optionally after subdividing it,
+// then baked into the mesh so the 3D view shows the relief.
+// projection: 0 triplanar, 1 cylindrical, 2 spherical. Returns "" or an error.
+JNI(jstring, textureDisplace)(JNIEnv *env, jobject, jstring jpng, jfloat depth, jfloat tile, jfloat rotation, jboolean invert,
+                              jint projection, jint subdivide)
+{
+    std::lock_guard lock(g_session.mutex);
+    try {
+        ModelObject *o = picked();
+        if (!o) return to_j(env, "Pick an object first.");
+        std::ifstream in(jstr(env, jpng), std::ios::binary);
+        auto bytes = std::make_shared<std::vector<unsigned char>>(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+        if (bytes->empty()) return to_j(env, "Can't read the image.");
+        g_session.snapshot();
+        for (ModelVolume *v : o->volumes) {
+            if (!v->is_model_part()) continue;
+            if (subdivide > 0) {
+                v->set_mesh(TriangleMesh(subdivide_mesh_uniform(v->mesh().its, 0.f, subdivide)));
+                v->set_new_unique_id();
+            }
+            TextureDisplacementLayer layer;
+            layer.slot              = 0;
+            layer.name              = "Texture";
+            layer.image_data        = bytes;
+            layer.depth_mm          = depth;
+            layer.tiling_scale      = tile;
+            layer.rotation_deg      = rotation;
+            layer.invert            = invert;
+            layer.projection_method = TextureProjectionMethod(std::clamp(int(projection), 0, 2));
+            v->texture_displacement_layers = {layer};
+            TriangleSelector sel(v->mesh());
+            for (size_t i = 0; i < v->mesh().its.indices.size(); ++i) sel.set_facet(int(i), EnforcerBlockerType::ENFORCER);
+            v->texture_displacement_facet(0).set(sel);
+            indexed_triangle_set baked = build_texture_displacement(*v);
+            v->texture_displacement_layers.clear();
+            v->texture_displacement_facet(0).reset();
+            v->set_mesh(TriangleMesh(std::move(baked)));
+            v->calculate_convex_hull();
+            v->invalidate_convex_hull_2d();
+        }
+        o->invalidate_bounding_box();
+        o->ensure_on_bed();
+        model_changed();
+        return to_j(env, "");
+    } catch (const std::exception &e) {
+        return to_j(env, e.what());
     }
 }

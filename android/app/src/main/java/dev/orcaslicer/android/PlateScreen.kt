@@ -140,6 +140,7 @@ private fun PrepareOverlay(state: AppState, host: PlateHost, bottomInset: Dp) {
     var tools by remember { mutableStateOf(false) }
     var panel by remember { mutableStateOf(ToolPanel.None) }
     var svg by remember { mutableStateOf<String?>(null) }
+    var texture by remember { mutableStateOf<java.io.File?>(null) }
     val sel = state.objects.getOrNull(state.selected)
     val outside = state.objects.any { it.outside }
     Box(Modifier.fillMaxSize()) {
@@ -171,7 +172,8 @@ private fun PrepareOverlay(state: AppState, host: PlateHost, bottomInset: Dp) {
             OrcaCore.paintMode(m)
             state.gizmoMode = 0; state.setGizmo(if (m == 5) 7 else 6)
             host.scene?.requestRender()
-        }, onVariableLayers = { host.layersOpen = true }) { tools = false }
+        }, onVariableLayers = { host.layersOpen = true }, onTexture = { texture = it }) { tools = false }
+        texture?.let { TextureDialog(state, it) { texture = null } }
         if (host.layersOpen) VariableLayerDialog(state) { host.layersOpen = false }
         if (host.brush.mode > 0) PaintPanel(state, host.brush, Modifier.align(Alignment.BottomCenter).padding(bottom = bottomInset)) {
             OrcaCore.paintMode(0); host.brush.mode = 0

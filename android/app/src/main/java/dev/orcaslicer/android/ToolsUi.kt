@@ -223,7 +223,7 @@ fun MeasurePanel(result: JSONObject?, modifier: Modifier, onClear: () -> Unit, o
 /** The tools the left rail's TOOLS key opens. */
 @Composable
 fun ToolSheet(state: AppState, host: PlateHost, onPick: (ToolPanel) -> Unit, onSvg: (String) -> Unit, onPaint: (Int) -> Unit, onVariableLayers: () -> Unit,
-              onClose: () -> Unit) {
+              onTexture: (java.io.File) -> Unit, onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
     val hasObject = state.selected >= 0
     val items = listOf(
@@ -240,6 +240,7 @@ fun ToolSheet(state: AppState, host: PlateHost, onPick: (ToolPanel) -> Unit, onS
         Triple("Fuzzy skin painting", hasObject) { onPaint(4) },
         Triple("Brim ears", hasObject) { onPaint(5) },
         Triple("Variable layer height", hasObject) { onVariableLayers() },
+        Triple("Texture displacement", hasObject) { host.pickFile(onTexture) },
     )
     AlertDialog(onDismissRequest = onClose, containerColor = Board.frame,
         title = { Text("TOOLS", style = MaterialTheme.typography.titleMedium) },
