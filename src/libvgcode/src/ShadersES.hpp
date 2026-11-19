@@ -12,7 +12,8 @@ namespace libvgcode {
 
 static const char* Segments_Vertex_Shader_ES =
 "#version 300 es\n"
-"precision lowp usampler2D;\n"
+"precision highp usampler2D;\n"
+"precision highp sampler2D;\n"
 "#define POINTY_CAPS\n"
 "#define FIX_TWISTING\n"
 "uniform vec3 light_top_dir;\n"
@@ -231,7 +232,8 @@ static const char* Segments_Vertex_Shader_ES =
 // ORCA: realistic view - shadow caster, one light facing ribbon per segment, not instanced as tiny instances are slow.
 static const char* Segments_Shadow_Caster_Vertex_Shader_ES =
 "#version 300 es\n"
-"precision lowp usampler2D;\n"
+"precision highp usampler2D;\n"
+"precision highp sampler2D;\n"
 "const vec3 UP = vec3(0, 0, 1);\n"
 "const int CORNERS[6] = int[](0, 1, 2, 0, 2, 3);\n"
 "uniform mat4 view_matrix;\n"
@@ -461,7 +463,8 @@ static const char* Segments_Fragment_Shader_ES =
 
 static const char* Options_Vertex_Shader_ES =
 "#version 300 es\n"
-"precision lowp usampler2D;\n"
+"precision highp usampler2D;\n"
+"precision highp sampler2D;\n"
 "const vec3  light_top_dir = vec3(-0.4574957, 0.4574957, 0.7624929);\n"
 "const float light_top_diffuse = 0.6 * 0.8;\n"
 "const float light_top_specular = 0.6 * 0.125;\n"

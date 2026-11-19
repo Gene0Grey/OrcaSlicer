@@ -1,6 +1,9 @@
 package dev.orcaslicer.android
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -77,6 +80,24 @@ import kotlinx.coroutines.launch
 
 private val SETUP_PEEK = 236.dp
 private val RESULTS_PEEK = 150.dp
+private val COLLAPSED_PEEK = 52.dp
+
+/** The sheet's handle: tap to collapse the sheet to this bar (printer · filament · process, or the print time) and back. */
+@Composable
+private fun SheetHandle(state: AppState, host: PlateHost, prepare: Boolean, onToggle: () -> Unit) =
+    Row(Modifier.fillMaxWidth().height(COLLAPSED_PEEK).clickable { host.sheetCollapsed = !host.sheetCollapsed; onToggle() }
+        .semantics { contentDescription = if (host.sheetCollapsed) "Show the setup" else "Collapse the setup" }
+        .padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Icon(if (host.sheetCollapsed) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, tint = Board.steelLight)
+        val p = state.presets
+        val line = if (prepare) listOf(shortName(p.printer, p.vendor), p.slots.firstOrNull()?.name?.let { shortName(it, p.vendor) }.orEmpty(), shortName(p.process, p.vendor))
+            .filter { it.isNotBlank() }.joinToString("  ·  ")
+            else state.stats?.let { "${formatTime(it.totalTime)}  ·  %.1f G".format(it.grams) } ?: "RESULTS"
+        Text(if (host.sheetCollapsed) line.uppercase() else "", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = Board.steelLight,
+            maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        Box(Modifier.size(width = 32.dp, height = 4.dp).background(Board.steelMid, MaterialTheme.shapes.small))
+        Spacer(Modifier.weight(if (host.sheetCollapsed) 0.01f else 1f))
+    }
 
 /** Prepare and Preview: the plate view with its board overlays, and the setup/results sheet. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -103,16 +124,24 @@ fun PlateScreen(state: AppState, host: PlateHost, wide: Boolean) {
         } }
     } else {
         val sheet = rememberBottomSheetScaffoldState()
+        val scope = rememberCoroutineScope()
+        // Collapsed: only the handle bar (with the setup in one line) stays up; tap it to toggle.
+        val peek = when {
+            prepare && host.panelOpen -> 0.dp
+            host.sheetCollapsed -> COLLAPSED_PEEK
+            prepare -> SETUP_PEEK
+            else -> RESULTS_PEEK
+        }
         BottomSheetScaffold(
             scaffoldState = sheet,
-            sheetPeekHeight = if (prepare) (if (host.panelOpen) 0.dp else SETUP_PEEK) else RESULTS_PEEK,
+            sheetPeekHeight = peek,
             sheetContainerColor = Board.frame,
             sheetContentColor = Board.letter,
             sheetShape = MaterialTheme.shapes.large,
-            sheetDragHandle = { BottomSheetDefaults.DragHandle(color = Board.steelMid) },
+            sheetDragHandle = { SheetHandle(state, host, prepare) { scope.launch { sheet.bottomSheetState.partialExpand() } } },
             containerColor = Board.flap,
             sheetContent = { Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) { panel() } },
-        ) { plate(if (prepare) (if (host.panelOpen) 0.dp else SETUP_PEEK) else RESULTS_PEEK) }
+        ) { plate(peek) }
     }
 }
 

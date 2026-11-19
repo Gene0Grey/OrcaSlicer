@@ -83,6 +83,8 @@ class PlateHost(val camera: OrbitCamera, val cacheDir: File) {
     var layersOpen by mutableStateOf(false)
     /** A tool panel (cut, measure, painting) owns the bottom of Prepare: the setup sheet tucks away. */
     var panelOpen by mutableStateOf(false)
+    /** The setup / results sheet folded down to its handle bar. */
+    var sheetCollapsed by mutableStateOf(false)
     var calibrationOpen by mutableStateOf(false)
     var prefsOpen by mutableStateOf(false)
     var wizardOpen by mutableStateOf(false)

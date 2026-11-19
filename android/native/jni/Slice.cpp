@@ -252,14 +252,33 @@ JNI(jstring, slice)(JNIEnv *env, jobject, jint plate, jobject listener)
             if (st.percent >= 0) progress(st.percent, st.text);
         });
         print->process();
-        auto result = std::make_shared<GCodeProcessorResult>();
-        const Model &thumb_model = model;
-        const std::string path = print->export_gcode(out_path, result.get(), [&thumb_model, &colors](const ThumbnailsParams &p) {
-            ThumbnailsList list;
-            for (const Vec2d &sz : p.sizes)
-                list.push_back(render_thumbnail(thumb_model, colors, unsigned(sz.x()), unsigned(sz.y()), p.transparent_background));
-            return list;
-        });
+        // Nothing changed since this plate's last export: GCode::do_export returns early when the
+        // export step is done and its file exists, and Print::export_gcode then walks a G-code
+        // writer that never ran (crash in export_layer_filaments). Re-use the last result instead,
+        // and without one remove the file so the export runs in full.
+        std::shared_ptr<GCodeProcessorResult> previous;
+        {
+            std::lock_guard lock(g_session.mutex);
+            if (plate < int(g_session.plates.size()) && g_session.plates[plate].print == print && g_session.plates[plate].gcode_path == out_path)
+                previous = g_session.plates[plate].result;
+        }
+        std::shared_ptr<GCodeProcessorResult> result;
+        std::string path;
+        if (previous && print->is_step_done(psGCodeExport) && fs::exists(out_path)) {
+            result = previous;
+            path   = out_path;
+        } else {
+            boost::system::error_code ec;
+            fs::remove(out_path, ec);
+            result = std::make_shared<GCodeProcessorResult>();
+            const Model &thumb_model = model;
+            path = print->export_gcode(out_path, result.get(), [&thumb_model, &colors](const ThumbnailsParams &p) {
+                ThumbnailsList list;
+                for (const Vec2d &sz : p.sizes)
+                    list.push_back(render_thumbnail(thumb_model, colors, unsigned(sz.x()), unsigned(sz.y()), p.transparent_background));
+                return list;
+            });
+        }
         print->set_status_callback({});
         std::lock_guard lock(g_session.mutex);
         Session &s = g_session;
