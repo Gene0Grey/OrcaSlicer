@@ -18,6 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.automirrored.filled.RotateRight
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
@@ -374,6 +375,7 @@ private fun PreviewOverlay(state: AppState, host: PlateHost, bottomInset: Dp) {
         }
         if (platesOpen) PlatesDialog(state, host) { platesOpen = false; host.preview = null; host.scene?.requestPreviewInfo() }
         if (state.stats != null) Row(Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            IconButton(host.sendGcode, Modifier.flap()) { Icon(Icons.AutoMirrored.Filled.Send, "Send to printer", tint = Board.tealText) }
             IconButton({ shareToolpaths(host) }, Modifier.flap()) { Icon(Icons.Default.ViewInAr, "Share toolpaths as OBJ", tint = Board.letter) }
             IconButton(host.shareGcode, Modifier.flap()) { Icon(Icons.Default.Share, "Share G-code", tint = Board.letter) }
             ExtendedFloatingActionButton(onClick = host.exportGcode, containerColor = Board.teal, contentColor = Board.flap,

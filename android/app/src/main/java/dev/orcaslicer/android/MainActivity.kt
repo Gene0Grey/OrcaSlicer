@@ -98,6 +98,9 @@ class PlateHost(val camera: OrbitCamera, val cacheDir: File) {
     /** Asks where to save [name], has [produce] write it to a temporary file, then copies it there. */
     var saveFile: (name: String, produce: suspend (File) -> Boolean) -> Unit = { _, _ -> }
     var shareFiles: (List<File>) -> Unit = {}
+    /** Send the current plate's G-code / a file to the linked printer. */
+    var sendGcode: () -> Unit = {}
+    var sendFile: (File) -> Unit = {}
 
     /** Frames the current plate (Prepare) or the sliced plate, which G-code puts at plate 1 (Preview). */
     fun fit(state: AppState) {
@@ -145,6 +148,10 @@ fun App(state: AppState) {
     host.pickFile = { cb -> picked = cb; pickAny.launch(arrayOf("*/*")) }
     host.saveFile = { name, produce -> saving = name to produce; saveAny.launch(name) }
     host.shareFiles = { files -> shareAll(context, files) }
+    var sending by remember { mutableStateOf<Pair<File, String>?>(null) }
+    host.sendGcode = { state.stats?.let { sending = File(it.gcode) to "${state.projectName}_plate${state.currentPlate + 1}.gcode" } }
+    host.sendFile = { f -> sending = f to f.name }
+    sending?.let { (f, n) -> SendDialog(state, f, n) { sending = null } }
     host.openModel = { openModel.launch(arrayOf("*/*")) }
     host.exportGcode = { exportGcode.launch("${state.projectName}.gcode") }
     host.shareGcode = { state.stats?.let { share(context, File(it.gcode)) } }
@@ -187,7 +194,7 @@ fun App(state: AppState) {
                         onOpenProject = { host.pickFile { f -> scope.launch { if (state.openProject(f)) { state.screen = Screen.Prepare; host.fit(state) } } } },
                         onOpenGcode = { host.pickFile { f -> scope.launch { if (state.openGcode(f)) showPreview() } } },
                         onRecent = { path -> scope.launch { state.addRecent(path); state.screen = Screen.Prepare } })
-                    Screen.Device -> DeviceScreen(state)
+                    Screen.Device -> DeviceScreen(state, host)
                     Screen.Project -> ProjectScreen(state, host)
                     Screen.Prepare, Screen.Preview -> PlateScreen(state, host, wide)
                 }

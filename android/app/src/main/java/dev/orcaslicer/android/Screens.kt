@@ -122,45 +122,6 @@ private fun Departure(icon: ImageVector, title: String, detail: String, accent: 
         }
     }
 
-/** Device: the printer's address on the board, and its own web interface (Mainsail, Fluidd, OctoPrint) below. */
-@SuppressLint("SetJavaScriptEnabled")
-@Composable
-fun DeviceScreen(state: AppState) {
-    val prefs = LocalContext.current.getSharedPreferences("orca", 0)
-    val presetHost = state.values[OrcaCore.KIND_PRINTER]?.get("print_host").orEmpty()
-    var url by remember(state.presets.printer) { mutableStateOf(prefs.getString("device_url_${state.presets.printer}", null) ?: presetHost) }
-    var edit by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxSize()) {
-        BoardRow("Printer") { FlapCell(state.presets.printer.ifBlank { "NONE CHOSEN" }.uppercase(), Modifier.weight(1f)) }
-        BoardRow("Address") {
-            FlapCell(url.ifBlank { "NOT SET" }.uppercase(), Modifier.weight(1f), color = if (url.isBlank()) Board.amber else Board.tealText)
-            IconButton({ edit = true }) { Icon(Icons.Default.Edit, "Edit printer address", tint = Board.steelLight) }
-        }
-        val full = if (url.isBlank() || url.startsWith("http")) url else "http://$url"
-        if (full.isBlank()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("LINK YOUR PRINTER", style = MaterialTheme.typography.titleLarge)
-                Text("Enter the address of the printer's web interface (Mainsail, Fluidd, OctoPrint or PrusaLink) to watch and control it here.",
-                    style = MaterialTheme.typography.bodyMedium, color = Board.steelLight)
-                Departure(Icons.Default.Edit, "Add address", "Host name or IP on your network", Board.teal) { edit = true }
-            }
-        } else AndroidView(factory = { ctx ->
-            WebView(ctx).apply { settings.javaScriptEnabled = true; settings.domStorageEnabled = true; webViewClient = WebViewClient(); loadUrl(full) }
-        }, update = { if (it.url != full) it.loadUrl(full) }, modifier = Modifier.fillMaxSize())
-    }
-    if (edit) {
-        var text by remember { mutableStateOf(url) }
-        AlertDialog(
-            onDismissRequest = { edit = false }, containerColor = Board.frame,
-            title = { Text("PRINTER ADDRESS", style = MaterialTheme.typography.titleMedium) },
-            text = { OutlinedTextField(text, { text = it }, singleLine = true, colors = fieldColors, label = { Text("Host name or IP") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)) },
-            confirmButton = { TextButton({ url = text.trim(); prefs.edit().putString("device_url_${state.presets.printer}", url).apply(); edit = false }) { Text("CONNECT", color = Board.tealText) } },
-            dismissButton = { TextButton({ edit = false }) { Text("CANCEL", color = Board.steelLight) } },
-        )
-    }
-}
-
 /** Project: what this plate will print with, and what is on it. */
 @Composable
 fun ProjectScreen(state: AppState, host: PlateHost) {
