@@ -124,7 +124,6 @@ fun PlateScreen(state: AppState, host: PlateHost, wide: Boolean) {
         } }
     } else {
         val sheet = rememberBottomSheetScaffoldState()
-        val scope = rememberCoroutineScope()
         // Collapsed: only the handle bar (with the setup in one line) stays up; tap it to toggle.
         val peek = when {
             prepare && host.panelOpen -> 0.dp
@@ -132,13 +131,15 @@ fun PlateScreen(state: AppState, host: PlateHost, wide: Boolean) {
             prepare -> SETUP_PEEK
             else -> RESULTS_PEEK
         }
+        // Settle the sheet on its new resting height once the peek changes (collapse, tool panels).
+        androidx.compose.runtime.LaunchedEffect(peek) { runCatching { sheet.bottomSheetState.partialExpand() }; host.scene?.requestRender() }
         BottomSheetScaffold(
             scaffoldState = sheet,
             sheetPeekHeight = peek,
             sheetContainerColor = Board.frame,
             sheetContentColor = Board.letter,
             sheetShape = MaterialTheme.shapes.large,
-            sheetDragHandle = { SheetHandle(state, host, prepare) { scope.launch { sheet.bottomSheetState.partialExpand() } } },
+            sheetDragHandle = { SheetHandle(state, host, prepare) {} },
             containerColor = Board.flap,
             sheetContent = { Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) { panel() } },
         ) { plate(peek) }
