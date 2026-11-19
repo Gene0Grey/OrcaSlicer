@@ -95,9 +95,16 @@ jobs:
           distribution: temurin
           java-version: 21
 
+      # The native libraries are the expensive part: keep them even when the APK step fails.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: liborca-core-${{ env.ORCA_ABI }}
+          path: android/app/src/main/jniLibs/${{ env.ORCA_ABI }}/*.so
+
+      # Maven Central downloads fail now and then on the runners: one retry.
       - name: Build APK
         working-directory: android
-        run: bash gradlew assembleDebug --console=plain
+        run: bash gradlew assembleDebug --console=plain || (sleep 60 && bash gradlew assembleDebug --console=plain --refresh-dependencies)
 
       - uses: actions/upload-artifact@v4
         with:
