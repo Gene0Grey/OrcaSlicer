@@ -12,6 +12,11 @@ on:
       - 'CMakeLists.txt'
       - '.github/workflows/build_android.yml'
 
+# A newer push supersedes a build still running (keeps Actions usage down on this fork).
+concurrency:
+  group: build-android-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-24.04
