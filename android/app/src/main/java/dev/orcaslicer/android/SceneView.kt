@@ -76,7 +76,7 @@ class OrbitCamera {
  * double tap fits the plate.
  */
 @SuppressLint("ViewConstructor", "ClickableViewAccessibility")
-class SceneView(context: Context, val camera: OrbitCamera, private val dark: Boolean) : GLSurfaceView(context) {
+class SceneView(context: Context, val camera: OrbitCamera, @Volatile var dark: Boolean) : GLSurfaceView(context) {
     @Volatile var mode = 0
     var onPick: (Int) -> Unit = {}
     /** Long press: add the object to (or take it out of) the selection. */

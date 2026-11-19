@@ -137,7 +137,7 @@ fun FlapTabs(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) {
         indicator = { tabs -> TabRowDefaults.SecondaryIndicator(Modifier.tabIndicatorOffset(tabs[selected]), color = Board.teal) }) {
         labels.forEachIndexed { i, l ->
             Tab(selected = i == selected, onClick = { onSelect(i) }, selectedContentColor = Board.tealText, unselectedContentColor = Board.steelLight,
-                text = { Text(l.uppercase(), style = MaterialTheme.typography.labelLarge) })
+                text = { Text(tr(l).uppercase(), style = MaterialTheme.typography.labelLarge) })
         }
     }
 }
@@ -191,7 +191,7 @@ fun PresetEditorDialog(state: AppState, host: PlateHost, kind: Int, onClose: () 
 fun DialogBar(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClose: () -> Unit) =
     Row(Modifier.fillMaxWidth().steel().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClose) { Icon(icon, "Close", tint = Board.letter) }
-        Text(title.uppercase(), style = MaterialTheme.typography.titleLarge, color = Board.letter)
+        Text(tr(title).uppercase(), style = MaterialTheme.typography.titleLarge, color = Board.letter)
     }
 
 /** Vendor -> printer chooser: a departures board of brands, then of printers. */

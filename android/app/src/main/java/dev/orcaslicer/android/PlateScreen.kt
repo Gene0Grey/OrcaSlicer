@@ -118,7 +118,7 @@ fun PlateScreen(state: AppState, host: PlateHost, wide: Boolean) {
 private fun SceneHost(state: AppState, host: PlateHost) {
     val scope = rememberCoroutineScope()
     AndroidView(factory = { ctx ->
-        SceneView(ctx, host.camera, dark = true).also { v ->
+        SceneView(ctx, host.camera, dark = !Board.light).also { v ->
             v.onPick = { idx -> scope.launch { state.select(idx) } }
             v.onTogglePick = { idx -> scope.launch { state.edit("toggle_select", "idx" to idx) } }
             v.onFit = { host.fit(state) }
@@ -130,7 +130,7 @@ private fun SceneHost(state: AppState, host: PlateHost) {
             v.gizmoMode = state.gizmoMode
             host.scene = v
         }
-    }, modifier = Modifier.fillMaxSize())
+    }, update = { v -> if (v.dark == Board.light) { v.dark = !Board.light; v.requestRender() } }, modifier = Modifier.fillMaxSize())
 }
 
 // ---- Prepare -------------------------------------------------------------------------------
@@ -228,6 +228,10 @@ private fun PlateBar(state: AppState, host: PlateHost) {
             BarIcon(Icons.Default.MoreVert, "Plate actions", true) { more = true }
             DropdownMenu(more, { more = false }, containerColor = Board.frame) {
                 MenuItem("Add shape or handy model", Icons.Default.Category, true) { more = false; addShape = true }
+                MenuItem("Import models from a ZIP", Icons.Default.Add, true) {
+                    more = false
+                    host.pickFile { f -> scope.launch { modelFiles(f).forEach { state.addPath(it) } } }
+                }
                 MenuItem("Select all", Icons.Default.SelectAll, state.objects.isNotEmpty()) { more = false; scope.launch { state.edit("select_all") } }
                 MenuItem("Arrange plate", Icons.Default.AutoAwesomeMosaic, state.objects.isNotEmpty()) { more = false; scope.launch { state.plateCmd("arrange") } }
                 MenuItem("Slice all plates", Icons.Default.NearMe, state.objects.isNotEmpty()) { more = false; host.sliceAll() }
@@ -257,7 +261,7 @@ private fun PlateBar(state: AppState, host: PlateHost) {
 
 @Composable
 private fun MenuItem(label: String, icon: ImageVector, enabled: Boolean, onClick: () -> Unit) =
-    DropdownMenuItem(text = { Text(label.uppercase(), style = MaterialTheme.typography.labelLarge) }, onClick = onClick,
+    DropdownMenuItem(text = { Text(tr(label).uppercase(), style = MaterialTheme.typography.labelLarge) }, onClick = onClick,
         enabled = enabled, leadingIcon = { Icon(icon, null) })
 
 @Composable

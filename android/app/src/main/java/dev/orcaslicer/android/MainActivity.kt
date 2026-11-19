@@ -60,6 +60,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val state = AppState(applicationContext)
         setContent {
+            val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
+            Board.light = state.theme == "light" || (state.theme == "system" && !systemDark)
             BoardTheme { Surface(Modifier.fillMaxSize(), color = Board.ground) { App(state) } }
         }
     }
@@ -80,6 +82,9 @@ class PlateHost(val camera: OrbitCamera, val cacheDir: File) {
     val brush = PaintBrush()
     var layersOpen by mutableStateOf(false)
     var calibrationOpen by mutableStateOf(false)
+    var prefsOpen by mutableStateOf(false)
+    var wizardOpen by mutableStateOf(false)
+    var browserOpen by mutableStateOf(false)
     var scene by mutableStateOf<SceneView?>(null)
     var preview by mutableStateOf<PreviewInfo?>(null)
     var openModel: () -> Unit = {}
@@ -194,6 +199,8 @@ fun App(state: AppState) {
                         onOpen = host.openModel,
                         onOpenProject = { host.pickFile { f -> scope.launch { if (state.openProject(f)) { state.screen = Screen.Prepare; host.fit(state) } } } },
                         onCalibrate = { host.calibrationOpen = true },
+                        onDownload = { host.browserOpen = true },
+                        onPreferences = { host.prefsOpen = true },
                         onOpenGcode = { host.pickFile { f -> scope.launch { if (state.openGcode(f)) showPreview() } } },
                         onRecent = { path -> scope.launch { state.addRecent(path); state.screen = Screen.Prepare } })
                     Screen.Device -> DeviceScreen(state, host)
@@ -209,7 +216,7 @@ fun App(state: AppState) {
                     DESTINATIONS.forEach { d ->
                         NavigationRailItem(
                             selected = state.screen == d.screen, onClick = { state.screen = d.screen },
-                            icon = { Icon(d.icon, null) }, label = { Text(d.label.uppercase(), style = MaterialTheme.typography.labelSmall) },
+                            icon = { Icon(d.icon, null) }, label = { Text(tr(d.label).uppercase(), style = MaterialTheme.typography.labelSmall) },
                             colors = NavigationRailItemDefaults.colors(selectedIconColor = Board.flap, indicatorColor = Board.teal,
                                 selectedTextColor = Board.tealText, unselectedIconColor = Board.steelLight, unselectedTextColor = Board.steelLight),
                         )
@@ -224,7 +231,7 @@ fun App(state: AppState) {
                     DESTINATIONS.forEach { d ->
                         NavigationBarItem(
                             selected = state.screen == d.screen, onClick = { state.screen = d.screen },
-                            icon = { Icon(d.icon, null) }, label = { Text(d.label.uppercase(), style = MaterialTheme.typography.labelSmall) },
+                            icon = { Icon(d.icon, null) }, label = { Text(tr(d.label).uppercase(), style = MaterialTheme.typography.labelSmall) },
                             colors = NavigationBarItemDefaults.colors(selectedIconColor = Board.flap, indicatorColor = Board.teal,
                                 selectedTextColor = Board.tealText, unselectedIconColor = Board.steelLight, unselectedTextColor = Board.steelLight),
                         )
@@ -234,7 +241,15 @@ fun App(state: AppState) {
         }
     }
 
-    if (state.presets.printer.isEmpty() && state.busy == null && state.error == null) picker = true
+    var tipShown by remember { mutableStateOf(false) }
+    if (state.busy == null && state.error == null) {
+        if (!state.wizardDone) host.wizardOpen = true
+        else if (state.presets.printer.isEmpty()) picker = true
+        else if (state.tips && !tipShown) TipDialog(state) { tipShown = true }
+    }
+    if (host.wizardOpen && !picker) SetupWizard(state, onPickPrinter = { picker = true }) { host.wizardOpen = false }
+    if (host.prefsOpen) PreferencesDialog(state, onWizard = { host.wizardOpen = true }) { host.prefsOpen = false }
+    if (host.browserOpen) ModelBrowser(state, onLoaded = { host.browserOpen = false; state.screen = Screen.Prepare; host.fit(state) }) { host.browserOpen = false }
     if (picker) PrinterPicker(state) { picker = false }
     if (host.calibrationOpen) CalibrationDialog(state, host) { host.calibrationOpen = false }
     editor?.let { PresetEditorDialog(state, host, it) { editor = null } }

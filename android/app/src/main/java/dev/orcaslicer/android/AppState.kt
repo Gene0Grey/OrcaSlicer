@@ -100,6 +100,7 @@ class AppState(private val context: Context) {
 
     suspend fun start() = withContext(Dispatchers.IO) {
         extractResources()
+        I18n.load(resources, language)
         OrcaCore.init(resources.path, context.cacheDir.path)
         defs = parseDefs(JSONObject(OrcaCore.optionDefs()))
         layout = parseLayout(JSONObject(context.assets.open("settings_layout.json").bufferedReader().readText()))
@@ -235,6 +236,40 @@ class AppState(private val context: Context) {
         val err = OrcaCore.exportPreset(kind, f.path); if (err.isNotEmpty()) error = err; err.isEmpty()
     }
     suspend fun importPresets(f: File) = withContext(Dispatchers.IO) { applyState(OrcaCore.importPresets(f.path)) }
+
+    var language by mutableStateOf(prefs.getString("language", null) ?: defaultLanguage())
+    var theme by mutableStateOf(prefs.getString("theme", "dark")!!)
+    var tips by mutableStateOf(prefs.getBoolean("tips", true))
+    var wizardDone by mutableStateOf(prefs.getBoolean("wizard_done", prefs.contains("vendor")))
+
+    fun languages() = I18n.languages(resources)
+    fun saveLanguage(v: String) { language = v; prefs.edit().putString("language", v).apply() }
+    fun saveTheme(v: String) { theme = v; prefs.edit().putString("theme", v).apply() }
+    fun saveTips(v: Boolean) { tips = v; prefs.edit().putBoolean("tips", v).apply() }
+    fun saveWizardDone() { wizardDone = true; prefs.edit().putBoolean("wizard_done", true).apply() }
+
+    /** The device language when the desktop has a catalog for it. */
+    private fun defaultLanguage(): String {
+        val l = java.util.Locale.getDefault()
+        val have = File(resources, "i18n").list()?.toSet().orEmpty()
+        return listOf("${l.language}_${l.country}", l.language).firstOrNull { it in have } ?: "en"
+    }
+
+    /** (headline, body) of the desktop's hints, translated. */
+    fun hints(): List<Pair<String, String>> = runCatching {
+        File(resources, "data/hints.ini").readLines().map { it.trim() }.filter { it.startsWith("text") && '=' in it }.map { line ->
+            val text = tr(line.substringAfter('=').trim().replace("\\n", "\n")).replace("\n", "\n").replace(Regex("</?[ab]>"), "")
+            text.substringBefore('\n').trim() to text.substringAfter('\n', "").trim()
+        }
+    }.getOrDefault(emptyList())
+
+    /** Loads a model file already on the device onto the plate. */
+    suspend fun addPath(f: File) = withContext(Dispatchers.IO) {
+        val r = OrcaCore.addModel(f.path)
+        if (r.startsWith("{")) error = JSONObject(r).optString("error") else applyObjects(r)
+        remember(f.path)
+        invalidate()
+    }
 
     fun saveAutoSlice(v: Boolean) { autoSlice = v; prefs.edit().putBoolean("auto_slice", v).apply() }
 
@@ -429,16 +464,16 @@ class AppState(private val context: Context) {
         val d = o.getJSONObject(k)
         fun list(n: String) = d.optJSONArray(n)?.let { a -> (0 until a.length()).map(a::getString) } ?: emptyList()
         OptionDef(
-            k, d.getInt("type"), d.getString("label"), d.getString("full"), d.getString("tooltip"), d.getString("side"),
+            k, d.getInt("type"), tr(d.getString("label")), tr(d.getString("full")), tr(d.getString("tooltip")), tr(d.getString("side")),
             d.getInt("mode"), d.getBoolean("multiline"), d.getBoolean("code"), d.getBoolean("readonly"),
-            if (d.has("min")) d.getDouble("min") else null, if (d.has("max")) d.getDouble("max") else null, list("values"), list("labels"),
+            if (d.has("min")) d.getDouble("min") else null, if (d.has("max")) d.getDouble("max") else null, list("values"), list("labels").map(::tr),
         )
     }
 
     private fun parseLayout(o: JSONObject): Map<Int, List<LayoutPage>> {
         fun pages(a: JSONArray) = (0 until a.length()).map { a.getJSONObject(it) }.map { p ->
-            LayoutPage(p.getString("title"), p.getJSONArray("groups").let { g -> (0 until g.length()).map { g.getJSONObject(it) }.map { gr ->
-                LayoutGroup(gr.getString("title"), gr.getJSONArray("options").let { x -> (0 until x.length()).map(x::getString) })
+            LayoutPage(tr(p.getString("title")), p.getJSONArray("groups").let { g -> (0 until g.length()).map { g.getJSONObject(it) }.map { gr ->
+                LayoutGroup(tr(gr.getString("title")), gr.getJSONArray("options").let { x -> (0 until x.length()).map(x::getString) })
             } })
         }
         return mapOf(

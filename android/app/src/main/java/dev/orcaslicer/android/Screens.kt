@@ -24,7 +24,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Visibility
@@ -65,7 +67,7 @@ import java.util.Locale
 /** Home: the name on a flap header, two departures (new / open), and the recent-files board. */
 @Composable
 fun HomeScreen(state: AppState, onNew: () -> Unit, onOpen: () -> Unit, onOpenProject: () -> Unit, onCalibrate: () -> Unit, onOpenGcode: () -> Unit,
-               onRecent: (String) -> Unit) {
+               onDownload: () -> Unit, onPreferences: () -> Unit, onRecent: (String) -> Unit) {
     val stamp = remember { SimpleDateFormat("dd MMM HH:mm", Locale.getDefault()) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         Column(Modifier.fillMaxWidth().steel().padding(horizontal = 12.dp, vertical = 16.dp)) {
@@ -90,6 +92,8 @@ fun HomeScreen(state: AppState, onNew: () -> Unit, onOpen: () -> Unit, onOpenPro
             Departure(Icons.Default.Inventory2, "Open project", "3MF with plates and settings", Board.steelLight, onOpenProject)
             Departure(Icons.Default.Visibility, "Open G-code", "View a sliced file", Board.steelLight, onOpenGcode)
             Departure(Icons.Default.Straighten, "Calibration", "Temperature · flow · pressure advance · more", Board.steelLight, onCalibrate)
+            Departure(Icons.Default.CloudDownload, "Download models", "Printables · MakerWorld · Thingiverse", Board.steelLight, onDownload)
+            Departure(Icons.Default.Settings, "Preferences", "Language · theme · slicing · tips", Board.steelLight, onPreferences)
         }
         BoardHeading("Recently opened")
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 4.dp)) {
@@ -119,7 +123,7 @@ private fun Departure(icon: ImageVector, title: String, detail: String, accent: 
         Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, null, tint = accent, modifier = Modifier.size(28.dp))
             Column(Modifier.padding(start = 16.dp).weight(1f)) {
-                Text(title.uppercase(), style = MaterialTheme.typography.titleLarge, color = Board.letter)
+                Text(tr(title).uppercase(), style = MaterialTheme.typography.titleLarge, color = Board.letter)
                 Text(detail.uppercase(), style = MaterialTheme.typography.labelMedium, color = Board.steelLight)
             }
         }
