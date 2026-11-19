@@ -16,8 +16,6 @@
 
 #include "libslic3r/AppConfig.hpp"
 #include "libslic3r/Format/ProjectStrategy.hpp"
-#include "libslic3r/ModelArrange.hpp"
-#include "libslic3r/Orient.hpp"
 #include "libslic3r/Utils.hpp"
 
 #include <android/log.h>
@@ -33,8 +31,6 @@ namespace fs = boost::filesystem;
 
 Session g_session;
 
-namespace {
-
 std::string jstr(JNIEnv *env, jstring s)
 {
     if (!s) return {};
@@ -45,6 +41,24 @@ std::string jstr(JNIEnv *env, jstring s)
 }
 
 jstring to_j(JNIEnv *env, const std::string &s) { return env->NewStringUTF(s.c_str()); }
+
+void model_changed()
+{
+    g_session.sliced = false;
+    ++g_session.scene_version;
+}
+
+BoundingBoxf3 bed_volume()
+{
+    const DynamicPrintConfig &cfg = g_session.bundle->printers.get_edited_preset().config;
+    BoundingBoxf3 bb;
+    if (const auto *pa = cfg.option<ConfigOptionPoints>("printable_area"))
+        for (const Vec2d &p : pa->values) bb.merge(Vec3d(p.x(), p.y(), 0.));
+    bb.merge(Vec3d(bb.min.x(), bb.min.y(), cfg.opt_float("printable_height")));
+    return bb;
+}
+
+namespace {
 
 PresetCollection *collection(int kind)
 {
@@ -132,44 +146,6 @@ json option_defs_json()
     return out;
 }
 
-json objects_json()
-{
-    json out = json::array();
-    const Model &m = g_session.model;
-    for (size_t i = 0; i < m.objects.size(); ++i) {
-        const ModelObject *o = m.objects[i];
-        if (o->instances.empty()) continue;
-        const ModelInstance *inst = o->instances.front();
-        const BoundingBoxf3 bb = o->instance_bounding_box(0);
-        const Vec3d off = inst->get_offset(), rot = inst->get_rotation(), sc = inst->get_scaling_factor();
-        out.push_back({{"name", o->name},
-                       {"offset", {off.x(), off.y(), off.z()}},
-                       {"rotation", {rot.x(), rot.y(), rot.z()}},
-                       {"scale", {sc.x(), sc.y(), sc.z()}},
-                       {"size", {bb.size().x(), bb.size().y(), bb.size().z()}},
-                       {"selected", int(i) == g_session.selected},
-                       {"outside", g_session.outside(*o)}});
-    }
-    return out;
-}
-
-void arrange_model()
-{
-    BoundingBox bed;
-    const auto *pa = g_session.bundle->printers.get_edited_preset().config.option<ConfigOptionPoints>("printable_area");
-    for (const Vec2d &p : pa->values)
-        bed.merge(Point(scaled(p.x()), scaled(p.y())));
-    arrangement::ArrangeParams params;
-    params.min_obj_distance = scaled(6.);
-    arrange_objects(g_session.model, bed, params, [](arrangement::ArrangePolygon &ap) { ++ap.bed_idx; });
-}
-
-void model_changed()
-{
-    g_session.sliced = false;
-    ++g_session.scene_version;
-}
-
 // The numbers behind the desktop preview legend: time and filament per line type, and totals.
 json slice_stats_json()
 {
@@ -238,7 +214,6 @@ struct ProgressListener
 
 } // namespace
 
-#define JNI(ret, name) extern "C" JNIEXPORT ret JNICALL Java_dev_orcaslicer_android_OrcaCore_##name
 
 JNI(jstring, init)(JNIEnv *env, jobject, jstring resources, jstring cache)
 {
@@ -432,75 +407,6 @@ JNI(jstring, savePreset)(JNIEnv *env, jobject, jint kind, jstring name)
     }
 }
 
-JNI(jstring, addModel)(JNIEnv *env, jobject, jstring path)
-{
-    std::lock_guard lock(g_session.mutex);
-    try {
-        Model loaded = Model::read_from_file(jstr(env, path), nullptr, nullptr, LoadStrategy::LoadModel | LoadStrategy::AddDefaultInstances);
-        g_session.snapshot();
-        for (ModelObject *o : loaded.objects) {
-            ModelObject *added = g_session.model.add_object(*o);
-            added->ensure_on_bed();
-        }
-        arrange_model();
-        g_session.selected = int(g_session.model.objects.size()) - 1;
-        model_changed();
-        return to_j(env, objects_json().dump());
-    } catch (const std::exception &e) {
-        return to_j(env, json{{"error", e.what()}}.dump());
-    }
-}
-
-JNI(jstring, objects)(JNIEnv *env, jobject)
-{
-    std::lock_guard lock(g_session.mutex);
-    return to_j(env, objects_json().dump());
-}
-
-JNI(void, select)(JNIEnv *, jobject, jint idx)
-{
-    std::lock_guard lock(g_session.mutex);
-    g_session.selected = idx;
-    ++g_session.scene_version;
-}
-
-// op: 0 delete, 1 duplicate, 2 arrange all, 3 orient, 4 clear, 5 lay flat (drop to bed)
-JNI(jstring, objectOp)(JNIEnv *env, jobject, jint op, jint idx)
-{
-    std::lock_guard lock(g_session.mutex);
-    Model &m = g_session.model;
-    const bool valid = idx >= 0 && size_t(idx) < m.objects.size();
-    if (valid || op == 2 || op == 4) g_session.snapshot();
-    switch (op) {
-    case 0: if (valid) { m.delete_object(size_t(idx)); g_session.selected = -1; } break;
-    case 1: if (valid) { m.add_object(*m.objects[idx]); arrange_model(); } break;
-    case 2: arrange_model(); break;
-    case 3: if (valid) { orientation::orient(m.objects[idx]->instances.front()); m.objects[idx]->ensure_on_bed(); } break;
-    case 4: m.clear_objects(); g_session.selected = -1; break;
-    case 5: if (valid) m.objects[idx]->ensure_on_bed(); break;
-    }
-    model_changed();
-    return to_j(env, objects_json().dump());
-}
-
-JNI(jstring, setTransform)(JNIEnv *env, jobject, jint idx, jdoubleArray values)
-{
-    std::lock_guard lock(g_session.mutex);
-    Model &m = g_session.model;
-    if (idx < 0 || size_t(idx) >= m.objects.size()) return to_j(env, objects_json().dump());
-    jdouble v[9];
-    env->GetDoubleArrayRegion(values, 0, 9, v);
-    g_session.snapshot();
-    ModelInstance *inst = m.objects[idx]->instances.front();
-    inst->set_offset(Vec3d(v[0], v[1], v[2]));
-    inst->set_rotation(Vec3d(v[3], v[4], v[5]));
-    inst->set_scaling_factor(Vec3d(v[6], v[7], v[8]));
-    m.objects[idx]->invalidate_bounding_box();
-    m.objects[idx]->ensure_on_bed();
-    model_changed();
-    return to_j(env, objects_json().dump());
-}
-
 JNI(jstring, slice)(JNIEnv *env, jobject, jobject listener)
 {
     std::lock_guard lock(g_session.mutex);
@@ -541,72 +447,4 @@ JNI(jstring, gcodePath)(JNIEnv *env, jobject)
 {
     std::lock_guard lock(g_session.mutex);
     return to_j(env, g_session.sliced ? g_session.gcode_path : std::string());
-}
-
-// Per-object setting overrides (the desktop's object settings): keys an object may override,
-// and the overrides of one object.
-JNI(jstring, objectSettingKeys)(JNIEnv *env, jobject)
-{
-    json out = json::array();
-    for (const std::string &k : PrintObjectConfig().keys()) out.push_back(k);
-    for (const std::string &k : PrintRegionConfig().keys()) out.push_back(k);
-    return to_j(env, out.dump());
-}
-
-JNI(jstring, objectValues)(JNIEnv *env, jobject, jint idx)
-{
-    std::lock_guard lock(g_session.mutex);
-    json out = json::object();
-    if (idx >= 0 && size_t(idx) < g_session.model.objects.size()) {
-        const DynamicPrintConfig &c = g_session.model.objects[idx]->config.get();
-        for (const std::string &key : c.keys()) out[key] = c.opt_serialize(key);
-    }
-    return to_j(env, out.dump());
-}
-
-// value == nullptr removes the override.
-JNI(jstring, setObjectValue)(JNIEnv *env, jobject, jint idx, jstring jkey, jstring jvalue)
-{
-    std::lock_guard lock(g_session.mutex);
-    if (idx < 0 || size_t(idx) >= g_session.model.objects.size()) return to_j(env, "No such object");
-    try {
-        g_session.snapshot();
-        ModelObject *obj = g_session.model.objects[idx];
-        const std::string key = jstr(env, jkey);
-        if (jvalue == nullptr) {
-            obj->config.erase(key);
-        } else {
-            ConfigSubstitutionContext ctx(ForwardCompatibilitySubstitutionRule::Disable);
-            obj->config.set_deserialize(key, jstr(env, jvalue), ctx);
-        }
-        model_changed();
-        return nullptr;
-    } catch (const std::exception &e) {
-        return to_j(env, e.what());
-    }
-}
-
-// Undo/redo of plate edits. Return the objects, like the other object calls.
-JNI(jstring, undo)(JNIEnv *env, jobject)
-{
-    std::lock_guard lock(g_session.mutex);
-    g_session.step(g_session.undo_stack, g_session.redo_stack);
-    return to_j(env, objects_json().dump());
-}
-
-JNI(jstring, redo)(JNIEnv *env, jobject)
-{
-    std::lock_guard lock(g_session.mutex);
-    g_session.step(g_session.redo_stack, g_session.undo_stack);
-    return to_j(env, objects_json().dump());
-}
-
-// {undo, redo} counts for enabling the buttons.
-JNI(jintArray, history)(JNIEnv *env, jobject)
-{
-    std::lock_guard lock(g_session.mutex);
-    const jint v[2] = {jint(g_session.undo_stack.size()), jint(g_session.redo_stack.size())};
-    jintArray a = env->NewIntArray(2);
-    env->SetIntArrayRegion(a, 0, 2, v);
-    return a;
 }

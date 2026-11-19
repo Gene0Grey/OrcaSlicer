@@ -108,7 +108,7 @@ fun Sidebar(state: AppState, host: PlateHost) {
         Switch(state.advanced, state::saveAdvanced, Modifier.padding(horizontal = 8.dp), colors = switchColors)
     }
     FlapTabs(listOf("Global", "Objects"), objectsTab) { objectsTab = it }
-    if (objectsTab == 0) SettingsPages(state, OrcaCore.KIND_PROCESS) else ObjectList(state)
+    if (objectsTab == 0) SettingsPages(state, OrcaCore.KIND_PROCESS) else ObjectList(state, host)
 }
 
 @Composable

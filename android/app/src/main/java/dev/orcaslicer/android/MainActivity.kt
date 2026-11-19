@@ -76,7 +76,7 @@ private val DESTINATIONS = listOf(
 )
 
 /** What the plate screens (Prepare / Preview) need from the app shell. */
-class PlateHost(val camera: OrbitCamera) {
+class PlateHost(val camera: OrbitCamera, val cacheDir: File) {
     var scene by mutableStateOf<SceneView?>(null)
     var preview by mutableStateOf<PreviewInfo?>(null)
     var openModel: () -> Unit = {}
@@ -86,6 +86,11 @@ class PlateHost(val camera: OrbitCamera) {
     var addPrinter: () -> Unit = {}
     var editPreset: (Int) -> Unit = {}
     var exactTransform: () -> Unit = {}
+    /** Lets the user pick any file; it arrives copied into app storage. */
+    var pickFile: (onPicked: (File) -> Unit) -> Unit = {}
+    /** Asks where to save [name], has [produce] write it to a temporary file, then copies it there. */
+    var saveFile: (name: String, produce: suspend (File) -> Boolean) -> Unit = { _, _ -> }
+    var shareFiles: (List<File>) -> Unit = {}
 
     fun fit(state: AppState) {
         val b = state.presets.bed
@@ -101,7 +106,7 @@ fun App(state: AppState) {
     var picker by remember { mutableStateOf(false) }
     var editor by remember { mutableStateOf<Int?>(null) }
     var transform by remember { mutableStateOf(false) }
-    val host = remember { PlateHost(OrbitCamera()) }
+    val host = remember { PlateHost(OrbitCamera(), context.cacheDir) }
 
     val openModel = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) scope.launch { state.addModel(uri); state.screen = Screen.Prepare }
@@ -112,6 +117,23 @@ fun App(state: AppState) {
             context.contentResolver.openOutputStream(uri)?.use { out -> File(path).inputStream().use { it.copyTo(out) } }
         }
     }
+    var picked by remember { mutableStateOf<((File) -> Unit)?>(null) }
+    val pickAny = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val cb = picked; picked = null
+        if (uri != null && cb != null) scope.launch { cb(state.importFile(uri)) }
+    }
+    var saving by remember { mutableStateOf<Pair<String, suspend (File) -> Boolean>?>(null) }
+    val saveAny = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        val job = saving; saving = null
+        if (uri != null && job != null) scope.launch(Dispatchers.IO) {
+            val tmp = File(context.cacheDir, "export/${job.first}").apply { parentFile?.mkdirs(); delete() }
+            if (job.second(tmp) && tmp.exists())
+                context.contentResolver.openOutputStream(uri)?.use { out -> tmp.inputStream().use { it.copyTo(out) } }
+        }
+    }
+    host.pickFile = { cb -> picked = cb; pickAny.launch(arrayOf("*/*")) }
+    host.saveFile = { name, produce -> saving = name to produce; saveAny.launch(name) }
+    host.shareFiles = { files -> shareAll(context, files) }
     host.openModel = { openModel.launch(arrayOf("*/*")) }
     host.exportGcode = { exportGcode.launch("${state.projectName}.gcode") }
     host.shareGcode = { state.stats?.let { share(context, File(it.gcode)) } }
@@ -198,6 +220,14 @@ fun BusyBoard(text: String, modifier: Modifier = Modifier) =
     Box(modifier.padding(24.dp).steel().padding(16.dp)) {
         FlapCell(text.uppercase().trimEnd('…', '.'), color = Board.tealText)
     }
+
+fun shareAll(context: android.content.Context, files: List<File>) {
+    if (files.isEmpty()) return
+    val uris = ArrayList(files.map { FileProvider.getUriForFile(context, "${context.packageName}.files", it) })
+    val intent = Intent(Intent.ACTION_SEND_MULTIPLE).setType("application/octet-stream").putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    context.startActivity(Intent.createChooser(intent, "Share files"))
+}
 
 fun share(context: android.content.Context, file: File) {
     val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)

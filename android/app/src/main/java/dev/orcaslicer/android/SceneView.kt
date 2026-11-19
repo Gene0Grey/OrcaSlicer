@@ -72,12 +72,15 @@ class OrbitCamera {
 
 /**
  * The native 3D view. mode 0 = Prepare (plate + objects), 1 = Preview (toolpaths).
- * One finger orbits, two fingers pan, pinch zooms, tap selects, double tap fits the plate.
+ * One finger orbits, two fingers pan, pinch zooms, tap selects, long press adds to the selection,
+ * double tap fits the plate.
  */
 @SuppressLint("ViewConstructor", "ClickableViewAccessibility")
 class SceneView(context: Context, val camera: OrbitCamera, private val dark: Boolean) : GLSurfaceView(context) {
     @Volatile var mode = 0
     var onPick: (Int) -> Unit = {}
+    /** Long press: add the object to (or take it out of) the selection. */
+    var onTogglePick: (Int) -> Unit = {}
     var onPreviewInfo: (String) -> Unit = {}
     var onFit: () -> Unit = {}
     var onGizmoEnd: () -> Unit = {}
@@ -143,6 +146,12 @@ class SceneView(context: Context, val camera: OrbitCamera, private val dark: Boo
             return true
         }
         override fun onDoubleTap(e: MotionEvent): Boolean { onFit(); requestRender(); return true }
+        override fun onLongPress(e: MotionEvent) {
+            if (mode != 0 || gizmoMode == 4 || pointers > 1) return
+            camera.update(width, height)
+            val idx = OrcaCore.pick(e.x, e.y, width, height, camera.view.clone(), camera.proj.clone())
+            if (idx >= 0) { performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS); onTogglePick(idx) }
+        }
     })
 
     private fun gizmo(e: MotionEvent): Boolean {

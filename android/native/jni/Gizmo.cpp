@@ -184,7 +184,6 @@ std::vector<GizmoLines> gizmo_geometry()
     return out;
 }
 
-#define JNI(ret, name) extern "C" JNIEXPORT ret JNICALL Java_dev_orcaslicer_android_OrcaCore_##name
 
 // 0 off, 1 move, 2 rotate, 3 scale
 JNI(void, gizmoSetMode)(JNIEnv *, jobject, jint mode)
@@ -333,7 +332,7 @@ JNI(jint, layOnFace)(JNIEnv *env, jobject, jfloat x, jfloat y, jint w, jint h, j
     inst->set_transformation(Geometry::Transformation(rot * inst->get_matrix()));
     obj->invalidate_bounding_box();
     obj->ensure_on_bed();
-    g_session.selected = best_obj;
+    g_session.select_only(best_obj);
     g_session.sliced = false;
     ++g_session.scene_version;
     return best_obj;

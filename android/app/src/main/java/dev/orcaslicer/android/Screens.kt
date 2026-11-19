@@ -190,17 +190,27 @@ fun ProjectScreen(state: AppState) {
 fun TransformDialog(state: AppState, onClose: () -> Unit) {
     val o = state.objects.getOrNull(state.selected) ?: return onClose()
     val scope = rememberCoroutineScope()
-    val fields = remember(o) {
-        (o.offset + o.rotation.map { Math.toDegrees(it) } + o.scale.map { it * 100 }).map { mutableStateOf("%.2f".format(it)) }
+    val index = state.selected
+    TransformFieldsDialog(o.name.ifBlank { "Object" }, o.offset, o.rotation, o.scale, o.size, onClose) { values ->
+        scope.launch { state.setTransform(index, values) }
+    }
+}
+
+/** Position (mm), rotation (degrees) and scale (%) fields; [onApply] gets offset, rotation (radians), scale factors. */
+@Composable
+fun TransformFieldsDialog(title: String, offset: List<Double>, rotation: List<Double>, scale: List<Double>, size: List<Double>,
+                          onClose: () -> Unit, onApply: (DoubleArray) -> Unit) {
+    val fields = remember(offset, rotation, scale) {
+        (offset + rotation.map { Math.toDegrees(it) } + scale.map { it * 100 }).map { mutableStateOf("%.2f".format(it)) }
     }
     var uniform by remember { mutableStateOf(true) }
     AlertDialog(
         onDismissRequest = onClose, containerColor = Board.frame,
-        title = { Text(o.name.ifBlank { "Object" }.uppercase(), style = MaterialTheme.typography.titleMedium) },
+        title = { Text(title.uppercase(), style = MaterialTheme.typography.titleMedium) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("Position · mm" to 0, "Rotation · degrees" to 3, "Scale · %" to 6).forEach { (title, start) ->
-                    Text(title.uppercase(), style = MaterialTheme.typography.labelMedium, color = Board.steelLight)
+                listOf("Position · mm" to 0, "Rotation · degrees" to 3, "Scale · %" to 6).forEach { (heading, start) ->
+                    Text(heading.uppercase(), style = MaterialTheme.typography.labelMedium, color = Board.steelLight)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         listOf("X", "Y", "Z").forEachIndexed { i, axis ->
                             OutlinedTextField(fields[start + i].value, { v ->
@@ -215,14 +225,13 @@ fun TransformDialog(state: AppState, onClose: () -> Unit) {
                     Checkbox(uniform, { uniform = it }, colors = CheckboxDefaults.colors(checkedColor = Board.teal, checkmarkColor = Board.flap))
                     Text("UNIFORM SCALE", style = MaterialTheme.typography.labelMedium)
                 }
-                Text("SIZE  %.1f × %.1f × %.1f MM".format(o.size[0], o.size[1], o.size[2]), style = MaterialTheme.typography.labelMedium, color = Board.steelLight)
+                Text("SIZE  %.1f × %.1f × %.1f MM".format(size[0], size[1], size[2]), style = MaterialTheme.typography.labelMedium, color = Board.steelLight)
             }
         },
         confirmButton = {
             TextButton({
                 val v = fields.map { it.value.replace(',', '.').toDoubleOrNull() ?: 0.0 }
-                val values = DoubleArray(9) { i -> when { i < 3 -> v[i]; i < 6 -> Math.toRadians(v[i]); else -> (v[i] / 100).coerceAtLeast(0.001) } }
-                scope.launch { state.setTransform(state.selected, values) }
+                onApply(DoubleArray(9) { i -> when { i < 3 -> v[i]; i < 6 -> Math.toRadians(v[i]); else -> (v[i] / 100).coerceAtLeast(0.001) } })
                 onClose()
             }) { Text("APPLY", color = Board.tealText) }
         },

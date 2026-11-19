@@ -52,10 +52,14 @@ object OrcaCore {
     /** {undo steps, redo steps} */
     external fun history(): IntArray
 
+    /** The object menu's commands (Edit.cpp); args is a JSON object. Returns the objects or {"error"}. */
+    external fun edit(cmd: String, args: String): String
+
     external fun objectSettingKeys(): String
-    external fun objectValues(index: Int): String
+    /** part: >= 0 a part (volume), -1 the object, <= -2 height range (-2 - part) */
+    external fun objectValues(index: Int, part: Int): String
     /** value null removes the override */
-    external fun setObjectValue(index: Int, key: String, value: String?): String?
+    external fun setObjectValue(index: Int, part: Int, key: String, value: String?): String?
 
     // GL thread
     external fun glInit()

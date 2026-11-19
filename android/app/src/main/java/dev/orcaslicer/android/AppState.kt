@@ -39,7 +39,19 @@ data class PresetsState(
     val bed: List<Pair<Double, Double>> = emptyList(), val bedHeight: Double = 250.0, val bedType: Int = 0,
 )
 
-data class PlateObject(val name: String, val offset: List<Double>, val rotation: List<Double>, val scale: List<Double>, val size: List<Double>, val selected: Boolean, val outside: Boolean)
+/** type: 0 part, 1 negative part, 2 modifier, 3 support blocker, 4 support enforcer (ModelVolumeType). */
+data class PlateVolume(val name: String, val type: Int, val filament: Int, val settings: Int,
+                       val offset: List<Double>, val rotation: List<Double>, val scale: List<Double>, val size: List<Double>)
+data class HeightRange(val lo: Double, val hi: Double, val settings: Int)
+
+data class PlateObject(
+    val name: String, val offset: List<Double>, val rotation: List<Double>, val scale: List<Double>, val size: List<Double>,
+    val selected: Boolean, val outside: Boolean, val primary: Boolean = selected, val instances: Int = 1, val printable: Boolean = true,
+    val filament: Int = 0, val settings: Int = 0, val inch: Boolean = false, val meter: Boolean = false, val source: String = "",
+    val volumes: List<PlateVolume> = emptyList(), val ranges: List<HeightRange> = emptyList(),
+)
+
+val VOLUME_TYPES = listOf("Part", "Negative part", "Modifier", "Support blocker", "Support enforcer")
 
 data class RoleStat(val role: Int, val name: String, val time: Double, val percent: Double, val meters: Double, val grams: Double)
 data class SliceStats(val roles: List<RoleStat>, val travelTime: Double, val totalTime: Double, val prepareTime: Double, val meters: Double, val grams: Double, val gcode: String)
@@ -69,7 +81,8 @@ class AppState(private val context: Context) {
     var canUndo by mutableStateOf(false)
     var canRedo by mutableStateOf(false)
     var objectKeys: List<String> = emptyList(); private set
-    val objectValues = mutableStateMapOf<Int, Map<String, String>>()
+    /** Overrides per (object, part); part -1 = the object, >= 0 a part, <= -2 a height range. */
+    val objectValues = mutableStateMapOf<Pair<Int, Int>, Map<String, String>>()
     var recent by mutableStateOf(prefs.getString("recent", "")!!.split('\n').filter { it.isNotBlank() })
 
     suspend fun start() = withContext(Dispatchers.IO) {
@@ -139,6 +152,18 @@ class AppState(private val context: Context) {
 
     suspend fun select(index: Int) = withContext(Dispatchers.IO) { OrcaCore.select(index); refreshObjects() }
 
+    /** Runs an object menu command (Edit.cpp); false when it was refused (the reason is shown). */
+    suspend fun edit(cmd: String, vararg args: Pair<String, Any?>): Boolean = withContext(Dispatchers.IO) {
+        val a = JSONObject()
+        args.forEach { (k, v) -> a.put(k, if (v is List<*>) JSONArray(v) else v) }
+        val r = OrcaCore.edit(cmd, a.toString())
+        if (r.startsWith("{")) { error = JSONObject(r).optString("error"); return@withContext false }
+        applyObjects(r)
+        objectValues.clear()
+        if (cmd != "toggle_select" && cmd != "select_all" && cmd != "copy_settings" && cmd != "export") stats = null
+        true
+    }
+
     /** Slices the plate; returns true when the preview has a result to show. */
     suspend fun slice(): Boolean = withContext(Dispatchers.IO) {
         sliceProgress = 0 to "Slicing…"
@@ -156,17 +181,20 @@ class AppState(private val context: Context) {
 
     suspend fun afterGizmo() = withContext(Dispatchers.IO) { refreshObjects(); stats = null }
 
+    val pickedCount get() = objects.count { it.selected }
+
     suspend fun undo() = withContext(Dispatchers.IO) { applyObjects(OrcaCore.undo()); objectValues.clear(); stats = null }
     suspend fun redo() = withContext(Dispatchers.IO) { applyObjects(OrcaCore.redo()); objectValues.clear(); stats = null }
 
-    fun refreshObjectValues(index: Int) {
-        objectValues[index] = JSONObject(OrcaCore.objectValues(index)).let { o -> o.keys().asSequence().associateWith { o.getString(it) } }
+    fun refreshObjectValues(index: Int, part: Int = -1) {
+        objectValues[index to part] = JSONObject(OrcaCore.objectValues(index, part)).let { o -> o.keys().asSequence().associateWith { o.getString(it) } }
     }
 
     /** value null removes the override. */
-    suspend fun setObjectValue(index: Int, key: String, value: String?) = withContext(Dispatchers.IO) {
-        OrcaCore.setObjectValue(index, key, value)?.let { error = it }
-        refreshObjectValues(index)
+    suspend fun setObjectValue(index: Int, part: Int, key: String, value: String?) = withContext(Dispatchers.IO) {
+        OrcaCore.setObjectValue(index, part, key, value)?.let { error = it }
+        refreshObjectValues(index, part)
+        refreshObjects()
         stats = null
     }
 
@@ -178,11 +206,17 @@ class AppState(private val context: Context) {
 
     private fun applyObjects(json: String) {
         val a = JSONArray(json)
+        fun JSONObject.d(k: String) = getJSONArray(k).let { x -> (0 until x.length()).map(x::getDouble) }
+        fun JSONObject.list(k: String) = optJSONArray(k)?.let { x -> (0 until x.length()).map(x::getJSONObject) }.orEmpty()
         objects = (0 until a.length()).map { a.getJSONObject(it) }.map { o ->
-            fun d(k: String) = o.getJSONArray(k).let { x -> (0 until x.length()).map(x::getDouble) }
-            PlateObject(o.getString("name"), d("offset"), d("rotation"), d("scale"), d("size"), o.getBoolean("selected"), o.optBoolean("outside"))
+            PlateObject(o.getString("name"), o.d("offset"), o.d("rotation"), o.d("scale"), o.d("size"), o.getBoolean("selected"), o.optBoolean("outside"),
+                o.optBoolean("primary", o.getBoolean("selected")), o.optInt("instances", 1), o.optBoolean("printable", true), o.optInt("filament"),
+                o.optInt("settings"), o.optBoolean("inch"), o.optBoolean("meter"), o.optString("source"),
+                o.list("volumes").map { v -> PlateVolume(v.getString("name"), v.getInt("type"), v.getInt("filament"), v.getInt("settings"),
+                    v.d("offset"), v.d("rotation"), v.d("scale"), v.d("size")) },
+                o.list("ranges").map { r -> HeightRange(r.getDouble("lo"), r.getDouble("hi"), r.getInt("settings")) })
         }
-        selected = objects.indexOfFirst { it.selected }
+        selected = objects.indexOfFirst { it.primary }
         OrcaCore.history().let { canUndo = it[0] > 0; canRedo = it[1] > 0 }
     }
 
@@ -218,7 +252,11 @@ class AppState(private val context: Context) {
         prefs.edit().putString("recent", recent.joinToString("\n")).apply()
     }
 
+    val handyModels: List<File> get() = File(resources, "handy_models").listFiles()?.sortedBy { it.name }.orEmpty()
+
     fun saveAdvanced(v: Boolean) { advanced = v; prefs.edit().putBoolean("advanced", v).apply() }
+
+    suspend fun importFile(uri: Uri): File = withContext(Dispatchers.IO) { copyToCache(uri) }
 
     private fun copyToCache(uri: Uri): File {
         var name = "model.stl"

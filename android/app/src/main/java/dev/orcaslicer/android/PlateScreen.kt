@@ -22,6 +22,10 @@ import androidx.compose.material.icons.automirrored.filled.RotateRight
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesomeMosaic
+import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.SaveAlt
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
@@ -111,6 +115,7 @@ private fun SceneHost(state: AppState, host: PlateHost) {
     AndroidView(factory = { ctx ->
         SceneView(ctx, host.camera, dark = true).also { v ->
             v.onPick = { idx -> scope.launch { state.select(idx) } }
+            v.onTogglePick = { idx -> scope.launch { state.edit("toggle_select", "idx" to idx) } }
             v.onFit = { host.fit(state) }
             v.onPreviewInfo = { host.preview = PreviewInfo.parse(it) }
             v.onGizmoEnd = { scope.launch { state.afterGizmo() } }
@@ -164,6 +169,8 @@ private fun PrepareOverlay(state: AppState, host: PlateHost, bottomInset: Dp) {
 private fun PlateBar(state: AppState, host: PlateHost) {
     val scope = rememberCoroutineScope()
     var more by remember { mutableStateOf(false) }
+    var addShape by remember { mutableStateOf(false) }
+    if (addShape) AddShapeDialog(state) { addShape = false }
     Row(Modifier.fillMaxWidth().background(Board.flap.copy(alpha = 0.86f)).padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         FlapCell("PLATE 01", color = Board.tealText)
@@ -175,7 +182,17 @@ private fun PlateBar(state: AppState, host: PlateHost) {
         Box {
             BarIcon(Icons.Default.MoreVert, "Plate actions", true) { more = true }
             DropdownMenu(more, { more = false }, containerColor = Board.frame) {
+                MenuItem("Add shape or handy model", Icons.Default.Category, true) { more = false; addShape = true }
+                MenuItem("Select all", Icons.Default.SelectAll, state.objects.isNotEmpty()) { more = false; scope.launch { state.edit("select_all") } }
                 MenuItem("Arrange all", Icons.Default.AutoAwesomeMosaic, state.objects.isNotEmpty()) { more = false; scope.launch { state.objectOp(2) } }
+                MenuItem("Export plate as STL", Icons.Default.SaveAlt, state.objects.isNotEmpty()) {
+                    more = false
+                    host.saveFile("${state.projectName}.stl") { f -> state.edit("export", "path" to f.path, "format" to "stl", "objects" to state.objects.indices.toList()) }
+                }
+                MenuItem("Share each object as STL", Icons.Default.Share, state.objects.isNotEmpty()) {
+                    more = false
+                    scope.launch { host.shareFiles(exportEach(state, host)) }
+                }
                 MenuItem("Fit view", Icons.Default.Tune, true) { more = false; host.fit(state) }
                 MenuItem("Clear plate", Icons.Default.Delete, state.objects.isNotEmpty()) { more = false; scope.launch { state.objectOp(4, -1) } }
             }
@@ -233,17 +250,25 @@ private fun ToolRail(state: AppState, modifier: Modifier) {
 @Composable
 private fun ObjectBar(state: AppState, o: PlateObject, host: PlateHost) {
     val scope = rememberCoroutineScope()
+    var menu by remember { mutableStateOf(false) }
+    if (menu) ObjectMenuDialog(state, host) { menu = false }
+    val many = state.pickedCount
     Row(Modifier.fillMaxWidth().steel().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp)) {
       Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(o.name.ifBlank { "Object" }.uppercase(), style = MaterialTheme.typography.labelLarge, color = if (o.outside) Board.red else Board.tealText, maxLines = 1)
-        Text("%.1f × %.1f × %.1f MM".format(o.size[0], o.size[1], o.size[2]), style = MaterialTheme.typography.labelSmall, color = Board.steelLight)
+        Text(if (many > 1) "$many OBJECTS PICKED" else o.name.ifBlank { "Object" }.uppercase(), style = MaterialTheme.typography.labelLarge,
+            color = if (o.outside) Board.red else Board.tealText, maxLines = 1)
+        Text(if (many > 1) "LONG PRESS TO ADD OR DROP" else "%.1f × %.1f × %.1f MM".format(o.size[0], o.size[1], o.size[2]) + if (o.instances > 1) "  ×${o.instances}" else "",
+            style = MaterialTheme.typography.labelSmall, color = Board.steelLight)
       }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            ObjectAction(Icons.Default.ScreenRotation, "Orient") { scope.launch { state.objectOp(3) } }
-            ObjectAction(Icons.Default.Tune, "Exact", onClick = host.exactTransform)
-            ObjectAction(Icons.Default.ContentCopy, "Copy") { scope.launch { state.objectOp(1) } }
+            if (many <= 1) {
+                ObjectAction(Icons.Default.ScreenRotation, "Orient") { scope.launch { state.objectOp(3) } }
+                ObjectAction(Icons.Default.Tune, "Exact", onClick = host.exactTransform)
+                ObjectAction(Icons.Default.ContentCopy, "Copy") { scope.launch { state.objectOp(1) } }
+            }
             ObjectAction(Icons.Default.Delete, "Delete", Board.red) { scope.launch { state.objectOp(0) } }
+            ObjectAction(Icons.Default.MoreHoriz, "More") { menu = true }
         }
     }
 }
@@ -279,4 +304,13 @@ private fun PreviewOverlay(state: AppState, host: PlateHost, bottomInset: Dp) {
                 icon = { Icon(Icons.Default.VerticalAlignBottom, null) }, modifier = Modifier.height(48.dp))
         }
     }
+}
+
+/** Writes each object to its own STL in the cache, for sharing. */
+private suspend fun exportEach(state: AppState, host: PlateHost): List<java.io.File> {
+    val dir = java.io.File(host.cacheDir, "export").apply { mkdirs() }
+    return state.objects.mapIndexed { i, o ->
+        val name = (o.name.ifBlank { "object" }.substringBeforeLast('.') + "_${i + 1}").replace(Regex("[^A-Za-z0-9._-]"), "_")
+        java.io.File(dir, "$name.stl").also { f -> state.edit("export", "path" to f.path, "format" to "stl", "objects" to listOf(i)) }
+    }.filter { it.exists() }
 }

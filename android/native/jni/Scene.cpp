@@ -84,8 +84,9 @@ struct GLState
     bool                ready = false;
     Program             mesh, flat;
     Mesh                bed_fill, bed_grid, bed_border, axes[3];
-    std::vector<Mesh>   objects;
-    std::vector<float>  object_colors; // rgba per object
+    // One draw item per object volume: solid parts opaque, modifiers / negative parts see-through.
+    struct Item { Mesh mesh; std::array<float, 4> color; };
+    std::vector<Item>   items;
     uint64_t            scene_version   = 0;
     uint64_t            preview_version = 0;
     libvgcode::Viewer   viewer;
@@ -123,9 +124,8 @@ void rebuild_scene()
 {
     release(gl.bed_fill); release(gl.bed_grid); release(gl.bed_border);
     for (Mesh &a : gl.axes) release(a);
-    for (Mesh &m : gl.objects) release(m);
-    gl.objects.clear();
-    gl.object_colors.clear();
+    for (auto &it : gl.items) release(it.mesh);
+    gl.items.clear();
     if (!g_session.bundle) return;
 
     const auto *pa = g_session.bundle->printers.get_edited_preset().config.option<Slic3r::ConfigOptionPoints>("printable_area");
@@ -155,13 +155,18 @@ void rebuild_scene()
     }
 
     const auto *colors = g_session.bundle->project_config.option<Slic3r::ConfigOptionStrings>("filament_colour");
-    const std::string col = colors && !colors->values.empty() ? colors->values.front() : "#26A69A";
+    auto filament_color = [colors](int ext) {
+        const size_t i = size_t(std::max(1, ext) - 1);
+        return parse_color(colors && i < colors->values.size() ? colors->values[i] : "#26A69A");
+    };
     for (size_t oi = 0; oi < g_session.model.objects.size(); ++oi) {
         const Slic3r::ModelObject *o = g_session.model.objects[oi];
-        std::vector<float> data;
-        for (const Slic3r::ModelInstance *inst : o->instances)
-            for (const Slic3r::ModelVolume *v : o->volumes) {
-                if (!v->is_model_part()) continue;
+        const int obj_ext = o->config.has("extruder") ? o->config.opt_int("extruder") : 0;
+        const bool outside = g_session.outside(*o), picked = g_session.picked.count(int(oi)) > 0;
+        const bool printable = o->instances.empty() || o->instances.front()->printable;
+        for (const Slic3r::ModelVolume *v : o->volumes) {
+            std::vector<float> data;
+            for (const Slic3r::ModelInstance *inst : o->instances) {
                 const Slic3r::Transform3d t = inst->get_matrix() * v->get_matrix();
                 const indexed_triangle_set &its = v->mesh().its;
                 for (const auto &f : its.indices) {
@@ -173,13 +178,24 @@ void rebuild_scene()
                         data.insert(data.end(), {float(p.x()), float(p.y()), float(p.z()), float(n.x()), float(n.y()), float(n.z())});
                 }
             }
-        gl.objects.push_back(upload(data, 6));
-        auto rgba = parse_color(col);
-        if (g_session.outside(*o))          // off the plate: board "cancelled" red
-            rgba = {0.90f, 0.28f, 0.30f, 1.f};
-        else if (int(oi) == g_session.selected)  // picked: half way to Orca teal, lifted
-            rgba = {rgba[0] * 0.5f + 0.06f, rgba[1] * 0.5f + 0.38f, rgba[2] * 0.5f + 0.34f, 1.f};
-        gl.object_colors.insert(gl.object_colors.end(), rgba.begin(), rgba.end());
+            std::array<float, 4> rgba;
+            switch (v->type()) {
+            case Slic3r::ModelVolumeType::NEGATIVE_VOLUME:    rgba = {0.55f, 0.57f, 0.60f, 0.40f}; break;
+            case Slic3r::ModelVolumeType::PARAMETER_MODIFIER: rgba = {1.00f, 0.69f, 0.00f, 0.35f}; break; // board amber
+            case Slic3r::ModelVolumeType::SUPPORT_BLOCKER:    rgba = {0.90f, 0.28f, 0.30f, 0.35f}; break;
+            case Slic3r::ModelVolumeType::SUPPORT_ENFORCER:   rgba = {0.30f, 0.55f, 0.95f, 0.35f}; break;
+            default: {
+                const int ext = v->config.has("extruder") && v->config.opt_int("extruder") > 0 ? v->config.opt_int("extruder") : obj_ext;
+                rgba = filament_color(ext);
+                if (!printable) rgba = {0.36f, 0.37f, 0.39f, 1.f};
+                if (outside)        // off the plate: board "cancelled" red
+                    rgba = {0.90f, 0.28f, 0.30f, 1.f};
+                else if (picked)    // picked: half way to Orca teal, lifted
+                    rgba = {rgba[0] * 0.5f + 0.06f, rgba[1] * 0.5f + 0.38f, rgba[2] * 0.5f + 0.34f, 1.f};
+            }
+            }
+            gl.items.push_back({upload(data, 6), rgba});
+        }
     }
 }
 
@@ -221,14 +237,12 @@ void mul(const float *a, const float *b, float *out) // column-major a*b
 
 } // namespace
 
-#define JNI(ret, name) extern "C" JNIEXPORT ret JNICALL Java_dev_orcaslicer_android_OrcaCore_##name
 
 JNI(void, glInit)(JNIEnv *, jobject)
 {
     // A new EGL context (first start or after the surface was lost): old GL names are gone.
     if (gl.viewer_ready) gl.viewer.shutdown();
-    gl.objects.clear();
-    gl.object_colors.clear();
+    gl.items.clear();
     gl.bed_fill = gl.bed_grid = gl.bed_border = Mesh();
     for (Mesh &a : gl.axes) a = Mesh();
     gl.scene_version = gl.preview_version = 0;
@@ -303,17 +317,21 @@ JNI(void, glRender)(JNIEnv *env, jobject, jint mode, jfloatArray jview, jfloatAr
         glUseProgram(gl.mesh.id);
         glUniformMatrix4fv(gl.mesh.mvp, 1, GL_FALSE, mvp);
         glUniformMatrix4fv(gl.mesh.view, 1, GL_FALSE, view);
-        for (size_t i = 0; i < gl.objects.size(); ++i) {
-            const Mesh &m = gl.objects[i];
-            if (!m.count) continue;
-            glUniform4fv(gl.mesh.color, 1, &gl.object_colors[i * 4]);
-            glBindBuffer(GL_ARRAY_BUFFER, m.vbo);
-            glEnableVertexAttribArray(0);
-            glEnableVertexAttribArray(1);
-            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), nullptr);
-            glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), reinterpret_cast<void *>(3 * sizeof(float)));
-            glDrawArrays(GL_TRIANGLES, 0, m.count);
+        // Solid parts first, then the see-through volumes without writing depth.
+        for (int pass = 0; pass < 2; ++pass) {
+            glDepthMask(pass == 0 ? GL_TRUE : GL_FALSE);
+            for (const auto &it : gl.items) {
+                if (!it.mesh.count || (it.color[3] < 1.f) != (pass == 1)) continue;
+                glUniform4fv(gl.mesh.color, 1, it.color.data());
+                glBindBuffer(GL_ARRAY_BUFFER, it.mesh.vbo);
+                glEnableVertexAttribArray(0);
+                glEnableVertexAttribArray(1);
+                glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), nullptr);
+                glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), reinterpret_cast<void *>(3 * sizeof(float)));
+                glDrawArrays(GL_TRIANGLES, 0, it.mesh.count);
+            }
         }
+        glDepthMask(GL_TRUE);
         glDisableVertexAttribArray(0);
         glDisableVertexAttribArray(1);
         // Gizmo handles on top of everything, thick for touch.
