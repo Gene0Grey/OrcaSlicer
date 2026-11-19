@@ -54,7 +54,7 @@ dependencies {
 // Slicer resources liborca_core reads at runtime (system profiles, printer info), zipped from the
 // repo's resources/ tree; AppState unzips it once per install.
 val zipOrcaResources by tasks.registering(Zip::class) {
-    from(rootProject.file("../resources")) { include("info/**", "profiles/**", "handy_models/**") }
+    from(rootProject.file("../resources")) { include("info/**", "profiles/**", "handy_models/**", "calib/**") }
     archiveFileName.set("orca-resources.zip")
     destinationDirectory.set(layout.projectDirectory.dir("src/main/assets"))
 }

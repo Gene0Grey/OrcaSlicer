@@ -93,6 +93,10 @@ object OrcaCore {
     /** Bakes a greyscale PNG height map over the picked object; projection 0 triplanar, 1 cylindrical, 2 spherical. "" or an error. */
     external fun textureDisplace(png: String, depth: Float, tile: Float, rotation: Float, invert: Boolean, projection: Int, subdivide: Int): String
 
+    // Calib.cpp
+    /** temp / flow / flow_yolo / pa_line / pa_pattern / pa_tower / retraction / max_vol / vfa / shaping_freq / shaping_damp / cornering */
+    external fun calibrate(test: String, args: String): String
+
     // Tools.cpp
     /** cut_preview / cut / simplify / boolean / text / svg / measure_clear; returns objects or {"error"} */
     external fun tool(cmd: String, args: String): String

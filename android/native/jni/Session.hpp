@@ -5,6 +5,7 @@
 #include "libslic3r/Model.hpp"
 #include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/Print.hpp"
+#include "libslic3r/calib.hpp"
 
 #include <jni.h>
 #include <nlohmann/json.hpp>
@@ -50,6 +51,10 @@ struct Session
     // Copied object settings (Copy / Paste Process Settings).
     Slic3r::DynamicPrintConfig                     clipboard;
     bool                                           has_clipboard = false;
+    // A calibration test on the plate (Calib.cpp): the parameters the G-code generator reads, and
+    // the pressure advance pattern generator whose G-code goes into each plate's custom G-code.
+    std::shared_ptr<Slic3r::Calib_Params>                 calib;
+    std::shared_ptr<Slic3r::CalibPressureAdvancePattern>  pa_pattern;
     // Tool overlays drawn in Prepare: the cut plane (world transform of the plane, Z up) and
     // measure feature points.
     bool                                           cut_preview = false;

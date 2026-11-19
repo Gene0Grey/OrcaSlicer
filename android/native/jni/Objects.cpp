@@ -129,7 +129,7 @@ JNI(jstring, objectOp)(JNIEnv *env, jobject, jint op, jint idx)
     case 1: if (valid) { m.add_object(*m.objects[idx]); arrange_model(); } break;
     case 2: arrange_model(); break;
     case 3: if (valid) { orientation::orient(m.objects[idx]->instances.front()); m.objects[idx]->ensure_on_bed(); } break;
-    case 4: m.clear_objects(); g_session.select_only(-1); break;
+    case 4: m.clear_objects(); g_session.select_only(-1); g_session.calib.reset(); g_session.pa_pattern.reset(); break;
     case 5: if (valid) m.objects[idx]->ensure_on_bed(); break;
     }
     model_changed();

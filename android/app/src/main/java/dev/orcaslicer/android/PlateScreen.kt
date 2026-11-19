@@ -235,6 +235,7 @@ private fun PlateBar(state: AppState, host: PlateHost) {
                     more = false; state.saveAutoSlice(!state.autoSlice)
                 }
                 MenuItem("Save project (3MF)", Icons.Default.SaveAlt, true) { more = false; host.saveProject(false) }
+                MenuItem("Calibration", Icons.Default.Tune, true) { more = false; host.calibrationOpen = true }
                 MenuItem("Export all sliced plates", Icons.Default.SaveAlt, state.plates.any { it.sliced }) { more = false; host.saveProject(true) }
                 MenuItem("Share sliced plates' G-code", Icons.Default.Share, state.plates.any { it.sliced }) {
                     more = false; host.shareFiles(state.slicedFiles().map { it.second }.filter { it.exists() })

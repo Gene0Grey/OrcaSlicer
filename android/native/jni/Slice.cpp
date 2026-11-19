@@ -199,6 +199,7 @@ JNI(jstring, slice)(JNIEnv *env, jobject, jint plate, jobject listener)
     std::vector<std::string> colors;
     uint64_t version = 0;
     bool bbl = false;
+    Slic3r::Calib_Params calib;
     int filaments = 1;
     std::string out_path;
     {
@@ -218,6 +219,19 @@ JNI(jstring, slice)(JNIEnv *env, jobject, jint plate, jobject listener)
         version   = s.edit_version;
         bbl       = b.is_bbl_vendor();
         filaments = int(b.filament_presets.size());
+        if (s.calib) calib = *s.calib;
+        // Pressure advance pattern: its test lines are custom G-code per layer, generated for the
+        // anchor cubes on this plate (desktop _calib_pa_pattern_gen_gcode), merged per layer.
+        if (s.pa_pattern && !model.objects.empty()) {
+            std::vector<CustomGCode::Info> per_object;
+            for (const ModelObject *o : model.objects)
+                per_object.push_back(s.pa_pattern->generate_custom_gcodes(cfg, bbl, *o, Vec3d::Zero()));
+            CustomGCode::Info merged = per_object.front();
+            for (size_t i = 1; i < per_object.size(); ++i)
+                for (size_t k = 0; k < merged.gcodes.size() && k < per_object[i].gcodes.size(); ++k)
+                    merged.gcodes[k].extra += per_object[i].gcodes[k].extra;
+            model.plates_custom_gcodes[plate] = merged;
+        }
         out_path  = (fs::path(temporary_dir()) / ("plate_" + std::to_string(plate + 1) + ".gcode")).string();
     }
     {
@@ -228,6 +242,7 @@ JNI(jstring, slice)(JNIEnv *env, jobject, jint plate, jobject listener)
     json out;
     try {
         print->is_BBL_printer() = bbl;
+        print->set_calib_params(calib);
         print->apply(model, cfg);
         StringObjectException err = print->validate();
         if (!err.string.empty()) throw RuntimeError(err.string);

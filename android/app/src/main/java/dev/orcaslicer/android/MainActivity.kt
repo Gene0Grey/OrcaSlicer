@@ -79,6 +79,7 @@ private val DESTINATIONS = listOf(
 class PlateHost(val camera: OrbitCamera, val cacheDir: File) {
     val brush = PaintBrush()
     var layersOpen by mutableStateOf(false)
+    var calibrationOpen by mutableStateOf(false)
     var scene by mutableStateOf<SceneView?>(null)
     var preview by mutableStateOf<PreviewInfo?>(null)
     var openModel: () -> Unit = {}
@@ -192,6 +193,7 @@ fun App(state: AppState) {
                         onNew = { scope.launch { state.objectOp(4, -1); state.projectName = "Untitled"; state.screen = Screen.Prepare } },
                         onOpen = host.openModel,
                         onOpenProject = { host.pickFile { f -> scope.launch { if (state.openProject(f)) { state.screen = Screen.Prepare; host.fit(state) } } } },
+                        onCalibrate = { host.calibrationOpen = true },
                         onOpenGcode = { host.pickFile { f -> scope.launch { if (state.openGcode(f)) showPreview() } } },
                         onRecent = { path -> scope.launch { state.addRecent(path); state.screen = Screen.Prepare } })
                     Screen.Device -> DeviceScreen(state, host)
@@ -234,6 +236,7 @@ fun App(state: AppState) {
 
     if (state.presets.printer.isEmpty() && state.busy == null && state.error == null) picker = true
     if (picker) PrinterPicker(state) { picker = false }
+    if (host.calibrationOpen) CalibrationDialog(state, host) { host.calibrationOpen = false }
     editor?.let { PresetEditorDialog(state, host, it) { editor = null } }
     if (transform && state.selected >= 0) TransformDialog(state) { transform = false }
     state.error?.let { msg ->

@@ -242,6 +242,19 @@ class AppState(private val context: Context) {
 
     fun cancelSlice() = OrcaCore.cancelSlice()
 
+    /** Starts a calibration test (a new project with the test model and settings); false when refused. */
+    suspend fun calibrate(test: String, vararg args: Pair<String, Any?>): Boolean = withContext(Dispatchers.IO) {
+        val a = JSONObject(); args.forEach { (k, v) -> a.put(k, if (v is List<*>) JSONArray(v) else v) }
+        val r = OrcaCore.calibrate(test, a.toString())
+        if (r.startsWith("{")) { error = JSONObject(r).optString("error"); return@withContext false }
+        applyObjects(r)
+        applyState(OrcaCore.state())
+        projectName = "Calibration"
+        objectValues.clear()
+        invalidate()
+        true
+    }
+
     /** Geometry tools (Tools.cpp); false when refused (the reason is shown). */
     suspend fun tool(cmd: String, vararg args: Pair<String, Any?>): Boolean = withContext(Dispatchers.IO) {
         val a = JSONObject(); args.forEach { (k, v) -> a.put(k, v) }

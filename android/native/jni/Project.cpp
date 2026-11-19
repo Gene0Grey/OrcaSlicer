@@ -110,6 +110,8 @@ JNI(jstring, openProject)(JNIEnv *env, jobject, jstring jpath)
             }
         release_PlateData_list(plates);
         s.current = 0;
+        s.calib.reset();
+        s.pa_pattern.reset();
         s.viewer_result.reset();
         s.select_only(-1);
         model_changed();

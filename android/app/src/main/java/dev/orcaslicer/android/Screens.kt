@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.AlertDialog
@@ -63,7 +64,8 @@ import java.util.Locale
 
 /** Home: the name on a flap header, two departures (new / open), and the recent-files board. */
 @Composable
-fun HomeScreen(state: AppState, onNew: () -> Unit, onOpen: () -> Unit, onOpenProject: () -> Unit, onOpenGcode: () -> Unit, onRecent: (String) -> Unit) {
+fun HomeScreen(state: AppState, onNew: () -> Unit, onOpen: () -> Unit, onOpenProject: () -> Unit, onCalibrate: () -> Unit, onOpenGcode: () -> Unit,
+               onRecent: (String) -> Unit) {
     val stamp = remember { SimpleDateFormat("dd MMM HH:mm", Locale.getDefault()) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         Column(Modifier.fillMaxWidth().steel().padding(horizontal = 12.dp, vertical = 16.dp)) {
@@ -87,6 +89,7 @@ fun HomeScreen(state: AppState, onNew: () -> Unit, onOpen: () -> Unit, onOpenPro
             Departure(Icons.Default.FolderOpen, "Open model", "STL · 3MF · OBJ · STEP", Board.steelLight, onOpen)
             Departure(Icons.Default.Inventory2, "Open project", "3MF with plates and settings", Board.steelLight, onOpenProject)
             Departure(Icons.Default.Visibility, "Open G-code", "View a sliced file", Board.steelLight, onOpenGcode)
+            Departure(Icons.Default.Straighten, "Calibration", "Temperature · flow · pressure advance · more", Board.steelLight, onCalibrate)
         }
         BoardHeading("Recently opened")
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 4.dp)) {
