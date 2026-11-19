@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -25,7 +24,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesomeMosaic
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NearMe
 import androidx.compose.material.icons.filled.OpenWith
@@ -97,21 +95,12 @@ fun PlateScreen(state: AppState, host: PlateHost, wide: Boolean) {
         BottomSheetScaffold(
             scaffoldState = sheet,
             sheetPeekHeight = if (prepare) SETUP_PEEK else RESULTS_PEEK,
-            sheetContainerColor = Color.Transparent,
+            sheetContainerColor = Board.frame,
             sheetContentColor = Board.letter,
-            sheetShape = MaterialTheme.shapes.extraSmall,
-            sheetShadowElevation = 0.dp,
-            sheetDragHandle = null,
+            sheetShape = MaterialTheme.shapes.large,
+            sheetDragHandle = { BottomSheetDefaults.DragHandle(color = Board.steelMid) },
             containerColor = Board.flap,
-            sheetContent = {
-                Column(Modifier.fillMaxWidth().steel()) {
-                    // Grip: a flap-black slot in the steel, like a board's service handle.
-                    Box(Modifier.fillMaxWidth().heightIn(min = 28.dp), contentAlignment = Alignment.Center) {
-                        Box(Modifier.size(width = 56.dp, height = 8.dp).flap(Board.frameHi, 1.dp))
-                    }
-                    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) { panel() }
-                }
-            },
+            sheetContent = { Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) { panel() } },
         ) { plate(if (prepare) SETUP_PEEK else RESULTS_PEEK) }
     }
 }
@@ -159,8 +148,14 @@ private fun PrepareOverlay(state: AppState, host: PlateHost, bottomInset: Dp) {
         ToolRail(state, Modifier.align(Alignment.CenterStart).padding(start = 8.dp, top = 56.dp, bottom = bottomInset))
         Column(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = bottomInset + 16.dp), horizontalAlignment = Alignment.End,
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            BoardKey("Slice plate", Icons.Default.Layers, enabled = state.objects.isNotEmpty() && !outside && state.sliceProgress == null,
-                onClick = host.slice)
+            ExtendedFloatingActionButton(
+                onClick = { if (state.objects.isNotEmpty() && !outside && state.sliceProgress == null) host.slice() },
+                containerColor = if (state.objects.isNotEmpty() && !outside) Board.teal else Board.frame,
+                contentColor = if (state.objects.isNotEmpty() && !outside) Board.flap else Board.steelMid,
+                shape = MaterialTheme.shapes.medium,
+                text = { Text("SLICE PLATE", style = MaterialTheme.typography.labelLarge) },
+                icon = { Icon(Icons.Default.NearMe, null) },
+            )
         }
     }
 }
@@ -278,8 +273,10 @@ private fun PreviewOverlay(state: AppState, host: PlateHost, bottomInset: Dp) {
     Box(Modifier.fillMaxSize()) {
         PreviewSliders(state.stats, host.preview, host.scene, bottomInset)
         if (state.stats != null) Row(Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            IconButton(host.shareGcode, Modifier.size(56.dp).flap()) { Icon(Icons.Default.Share, "Share G-code", tint = Board.letter) }
-            BoardKey("Export G-code", Icons.Default.VerticalAlignBottom, enabled = true, onClick = host.exportGcode)
+            IconButton(host.shareGcode, Modifier.flap()) { Icon(Icons.Default.Share, "Share G-code", tint = Board.letter) }
+            ExtendedFloatingActionButton(onClick = host.exportGcode, containerColor = Board.teal, contentColor = Board.flap,
+                shape = MaterialTheme.shapes.medium, text = { Text("EXPORT G-CODE", style = MaterialTheme.typography.labelLarge) },
+                icon = { Icon(Icons.Default.VerticalAlignBottom, null) }, modifier = Modifier.height(48.dp))
         }
     }
 }

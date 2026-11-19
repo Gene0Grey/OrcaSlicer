@@ -101,11 +101,11 @@ fun Sidebar(state: AppState, host: PlateHost) {
         }
     }
     if (p.slots.size == 1) Text("ONE FILAMENT. ADD SLOTS FOR MULTI-COLOUR.", Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-        style = MaterialTheme.typography.labelSmall, color = Board.steelLight)
+        style = MaterialTheme.typography.labelSmall, color = Board.steelMid)
 
     BoardHeading("Process") {
         Text("ADVANCED", style = MaterialTheme.typography.labelMedium, color = if (state.advanced) Board.tealText else Board.steelLight)
-        Box(Modifier.padding(horizontal = 8.dp)) { FlapToggle(state.advanced, state::saveAdvanced, label = "Advanced settings") }
+        Switch(state.advanced, state::saveAdvanced, Modifier.padding(horizontal = 8.dp), colors = switchColors)
     }
     FlapTabs(listOf("Global", "Objects"), objectsTab) { objectsTab = it }
     if (objectsTab == 0) SettingsPages(state, OrcaCore.KIND_PROCESS) else ObjectList(state)
@@ -181,8 +181,9 @@ fun PrinterPicker(state: AppState, onClose: () -> Unit) {
                 DialogBar(vendor?.name ?: "Choose your printer", if (vendor != null) Icons.AutoMirrored.Filled.ArrowBack else Icons.Default.Close) {
                     if (vendor != null) { vendor = null; query = "" } else onClose()
                 }
-                BoardField(query, { query = it }, if (vendor == null) "Search brands and printers" else "Search printers",
-                    Modifier.fillMaxWidth().padding(12.dp), key = Icons.Default.Search)
+                OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(12.dp), singleLine = true,
+                    leadingIcon = { Icon(Icons.Default.Search, null) },
+                    placeholder = { Text(if (vendor == null) "Search brands and printers" else "Search printers") })
                 val v = vendor
                 if (v == null) {
                     LazyColumn {

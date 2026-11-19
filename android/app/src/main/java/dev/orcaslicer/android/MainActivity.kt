@@ -8,15 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -160,13 +152,31 @@ fun App(state: AppState) {
         }
         if (wide) {
             Row(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-                BoardNav(state, vertical = true)
+                NavigationRail(containerColor = Board.flap) {
+                    DESTINATIONS.forEach { d ->
+                        NavigationRailItem(
+                            selected = state.screen == d.screen, onClick = { state.screen = d.screen },
+                            icon = { Icon(d.icon, null) }, label = { Text(d.label.uppercase(), style = MaterialTheme.typography.labelSmall) },
+                            colors = NavigationRailItemDefaults.colors(selectedIconColor = Board.flap, indicatorColor = Board.teal,
+                                selectedTextColor = Board.tealText, unselectedIconColor = Board.steelLight, unselectedTextColor = Board.steelLight),
+                        )
+                    }
+                }
                 content(Modifier.weight(1f).fillMaxSize())
             }
         } else {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
                 content(Modifier.weight(1f))
-                BoardNav(state, vertical = false)
+                NavigationBar(containerColor = Board.flap, tonalElevation = 0.dp) {
+                    DESTINATIONS.forEach { d ->
+                        NavigationBarItem(
+                            selected = state.screen == d.screen, onClick = { state.screen = d.screen },
+                            icon = { Icon(d.icon, null) }, label = { Text(d.label.uppercase(), style = MaterialTheme.typography.labelSmall) },
+                            colors = NavigationBarItemDefaults.colors(selectedIconColor = Board.flap, indicatorColor = Board.teal,
+                                selectedTextColor = Board.tealText, unselectedIconColor = Board.steelLight, unselectedTextColor = Board.steelLight),
+                        )
+                    }
+                }
             }
         }
     }
@@ -193,31 +203,4 @@ fun share(context: android.content.Context, file: File) {
     val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
     val intent = Intent(Intent.ACTION_SEND).setType("text/x.gcode").putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     context.startActivity(Intent.createChooser(intent, "Share G-code"))
-}
-
-/**
- * Navigation as a row (phone) or column (tablet) of flap keys split by rules. The live destination is
- * lit: teal letters and a teal edge, no pill.
- */
-@Composable
-private fun BoardNav(state: AppState, vertical: Boolean) {
-    val keys: @Composable (Modifier) -> Unit = { m ->
-        DESTINATIONS.forEach { d ->
-            val active = state.screen == d.screen
-            Column(
-                m.selectable(active, role = Role.Tab, onClick = { state.screen = d.screen })
-                    .flap(if (active) Board.teal else null, 0.dp).padding(vertical = 8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
-            ) {
-                Icon(d.icon, null, tint = if (active) Board.tealText else Board.steelLight)
-                Text(d.label.uppercase(), style = MaterialTheme.typography.labelSmall, color = if (active) Board.tealText else Board.steelLight)
-            }
-        }
-    }
-    if (vertical) Column(Modifier.width(88.dp).fillMaxHeight().steel().padding(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        keys(Modifier.fillMaxWidth().heightIn(min = 72.dp))
-    } else Row(Modifier.fillMaxWidth().steel().windowInsetsPadding(WindowInsets.navigationBars).padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        keys(Modifier.weight(1f).heightIn(min = 64.dp))
-    }
 }

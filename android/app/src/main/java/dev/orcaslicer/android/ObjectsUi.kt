@@ -104,7 +104,8 @@ private fun AddObjectSettingDialog(state: AppState, existing: Set<String>, onClo
         Surface(Modifier.fillMaxSize(), color = Board.ground) {
             Column {
                 DialogBar("Add object setting", Icons.AutoMirrored.Filled.ArrowBack, onClose)
-                BoardField(query, { query = it }, "Search settings", Modifier.fillMaxWidth().padding(12.dp), key = Icons.Default.Search)
+                OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(12.dp), singleLine = true, colors = fieldColors,
+                    leadingIcon = { Icon(Icons.Default.Search, null) }, placeholder = { Text("Search settings") })
                 LazyColumn {
                     items(rows, key = { it.third.key }) { (page, group, def) ->
                         Column(Modifier.fillMaxWidth().clickable { onPick(def.key) }.heightIn(min = 56.dp).drawBehind {

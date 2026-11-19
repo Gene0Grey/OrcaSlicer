@@ -78,8 +78,11 @@ fun SettingsPages(state: AppState, kind: Int, modifier: Modifier = Modifier) {
     fun visible(key: String): OptionDef? = state.defs[key]?.takeIf { it.mode <= maxMode && values.containsKey(key) }
 
     Column(modifier) {
-        BoardField(query, { query = it }, "Search ${if (state.advanced) "all" else "simple"} settings",
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), key = Icons.Default.Search)
+        OutlinedTextField(
+            value = query, onValueChange = { query = it }, singleLine = true, colors = fieldColors,
+            leadingIcon = { Icon(Icons.Default.Search, null) }, placeholder = { Text("Search ${if (state.advanced) "all" else "simple"} settings") },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+        )
         if (query.isBlank()) {
             val current = page.coerceAtMost(pages.lastIndex)
             PrimaryScrollableTabRow(selectedTabIndex = current, edgePadding = 8.dp, containerColor = Board.flap, contentColor = Board.tealText,
@@ -104,7 +107,7 @@ fun SettingsPages(state: AppState, kind: Int, modifier: Modifier = Modifier) {
                 .distinctBy { it.third.key }
             Column(Modifier.padding(bottom = 24.dp)) {
                 hits.forEach { (p, g, d) ->
-                    Text("$p › $g".uppercase(), style = MaterialTheme.typography.labelSmall, color = Board.steelLight, modifier = Modifier.padding(start = 16.dp, top = 10.dp))
+                    Text("$p › $g".uppercase(), style = MaterialTheme.typography.labelSmall, color = Board.steelMid, modifier = Modifier.padding(start = 16.dp, top = 10.dp))
                     OptionRow(state, kind, d, values[d.key] ?: "")
                 }
                 if (hits.isEmpty()) Text("NO SETTING MATCHES \"${query.uppercase()}\"." + if (!state.advanced) " TURN ON ADVANCED TO SEARCH EVERYTHING." else "",
@@ -135,7 +138,8 @@ fun OptionRow(def: OptionDef, value: String, onSet: (String) -> Unit, trailing: 
         Spacer(Modifier.width(10.dp))
         Box(Modifier.width(168.dp), contentAlignment = Alignment.CenterEnd) {
             when {
-                def.baseType == T_BOOL -> FlapToggle(value == "1" || value == "true", { set(if (it) "1" else "0") }, enabled = !def.readonly, label = label)
+                def.baseType == T_BOOL -> Switch(checked = value == "1" || value == "true", enabled = !def.readonly, colors = switchColors,
+                    onCheckedChange = { set(if (it) "1" else "0") })
                 def.baseType == T_ENUM || def.values.isNotEmpty() && def.baseType == T_STRING && !def.multiline -> {
                     val idx = def.values.indexOf(value)
                     val shown = if (idx >= 0 && idx < def.labels.size) def.labels[idx] else value
@@ -237,7 +241,7 @@ fun PresetSelector(state: AppState, kind: Int, selected: String, items: List<Pre
         AlertDialog(
             onDismissRequest = { saving = false }, containerColor = Board.frame,
             title = { Text("SAVE AS NEW PRESET", style = MaterialTheme.typography.titleMedium) },
-            text = { BoardField(name, { name = it }, "Preset name") },
+            text = { OutlinedTextField(name, { name = it }, singleLine = true, label = { Text("Preset name") }, colors = fieldColors) },
             confirmButton = { TextButton({ saving = false; scope.launch { state.savePreset(kind, name.trim()) } }, enabled = name.isNotBlank()) { Text("SAVE", color = Board.tealText) } },
             dismissButton = { TextButton({ saving = false }) { Text("CANCEL", color = Board.steelLight) } },
         )
@@ -254,4 +258,4 @@ private fun PresetItemRow(name: String, active: Boolean, onClick: () -> Unit) =
 
 @Composable
 private fun MenuHeader(text: String) =
-    Text(text.uppercase(), style = MaterialTheme.typography.labelSmall, color = Board.steelLight, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+    Text(text.uppercase(), style = MaterialTheme.typography.labelSmall, color = Board.steelMid, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
