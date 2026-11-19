@@ -9,10 +9,44 @@
 
 #include <boost/filesystem.hpp>
 
+#include <algorithm>
+#include <cmath>
+
 using namespace Slic3r;
 using json = nlohmann::json;
 
 json state_json(); // OrcaCore.cpp
+
+// FlushVolCalc (libslic3r) needs RGB2HSV, which the desktop defines in its GUI utilities
+// (slic3r/Utils/ColorSpaceConvert.cpp, which pulls in wxWidgets); same definition here.
+void RGB2HSV(float r, float g, float b, float* h, float* s, float* v)
+{
+    float Cmax = std::max(std::max(r, g), b);
+    float Cmin = std::min(std::min(r, g), b);
+    float delta = Cmax - Cmin;
+
+    if (std::abs(delta) < 0.001) {
+        *h = 0.f;
+    }
+    else if (Cmax == r) {
+        *h = 60.f * fmod((g - b) / delta, 6.f);
+    }
+    else if (Cmax == g) {
+        *h = 60.f * ((b - r) / delta + 2);
+    }
+    else {
+        *h = 60.f * ((r - g) / delta + 4);
+    }
+
+    if (std::abs(Cmax) < 0.001) {
+        *s = 0.f;
+    }
+    else {
+        *s = delta / Cmax;
+    }
+
+    *v = Cmax;
+}
 
 namespace {
 
