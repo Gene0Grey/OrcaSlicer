@@ -109,6 +109,26 @@ fun ResultsBoard(state: AppState, info: PreviewInfo?, host: PlateHost) {
     LegendRow("Travel", Board.steelMid, formatTime(stats.travelTime), "", "", travel) { v -> travel = v; host.scene?.onGl { OrcaCore.previewToggleTravel() } }
     BoardRow("Total filament") { FlapCell("%.2f M   %.2f G".format(stats.meters, stats.grams), Modifier.weight(1f)) }
     BoardRow("Prepare time") { FlapCell(formatTime(stats.prepareTime.toDouble()), Modifier.weight(1f)) }
+    // Per filament, as the desktop's filament table: length, weight (with flush), cost.
+    if (stats.filaments.isNotEmpty()) {
+        BoardHeading("Filament use")
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 4.dp)) {
+            Head("Filament", 1.6f); Head("M", 1f); Head("G", 1f); Head("Flush G", 1f); Head("Cost", 1f)
+        }
+        stats.filaments.forEach { f ->
+            Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.weight(1.6f), verticalAlignment = Alignment.CenterVertically) {
+                    state.presets.slots.getOrNull(f.filament - 1)?.let { Swatch(it.color, f.filament) } ?: Text("${f.filament}")
+                }
+                Text("%.2f".format(f.meters), Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
+                Text("%.2f".format(f.grams), Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
+                Text("%.2f".format(f.flushGrams), Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
+                Text("%.2f".format(f.cost), Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
+            }
+        }
+        BoardRow("Total cost") { FlapCell("%.2f".format(stats.cost), Modifier.weight(1f)) }
+        if (stats.changes > 0) BoardRow("Filament changes") { FlapCell("${stats.changes}", Modifier.weight(1f)) }
+    }
     Box(Modifier.heightIn(min = 24.dp))
 }
 

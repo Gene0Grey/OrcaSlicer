@@ -107,13 +107,6 @@ int model_parts(const ModelObject &o)
     return int(std::count_if(o.volumes.begin(), o.volumes.end(), [](const ModelVolume *v) { return v->is_model_part(); }));
 }
 
-// Instances beyond the bed (after a fill-bed arrange) are dropped.
-void drop_outside_instances(ModelObject &o)
-{
-    for (int i = int(o.instances.size()) - 1; i > 0; --i)
-        if (g_session.outside(o, size_t(i))) o.delete_instance(size_t(i));
-}
-
 void align(const std::vector<ModelObject *> &objs, const std::string &mode)
 {
     BoundingBoxf3 all;
@@ -219,7 +212,14 @@ std::string run(const std::string &cmd, const json &a, bool &edited)
         const std::string path = a.value("path", "");
         if (!path.empty()) {
             Model loaded = Model::read_from_file(path, nullptr, nullptr, LoadStrategy::LoadModel | LoadStrategy::AddDefaultInstances);
-            for (ModelObject *o : loaded.objects) m.add_object(*o)->ensure_on_bed();
+            const BoundingBoxf3 bed = bed_volume();
+            for (ModelObject *o : loaded.objects) {
+                ModelObject *added = m.add_object(*o);
+                const Vec3d c = added->instance_bounding_box(0).center();
+                for (ModelInstance *inst : added->instances) inst->set_offset(inst->get_offset() + Vec3d(bed.center().x() - c.x(), bed.center().y() - c.y(), 0.));
+                added->invalidate_bounding_box();
+                added->ensure_on_bed();
+            }
             arrange_model();
             s.select_only(int(m.objects.size()) - 1);
         } else {
@@ -264,8 +264,12 @@ std::string run(const std::string &cmd, const json &a, bool &edited)
         const double cell = (bb.size().x() + 6.) * (bb.size().y() + 6.);
         const size_t want = size_t(std::clamp(1.2 * bed.size().x() * bed.size().y() / cell, 1., 400.));
         while (sel->instances.size() < want) sel->add_instance(*sel->instances.back());
-        arrange_model();
-        drop_outside_instances(*sel);
+        // What does not fit on this plate is dropped, not spilled onto new plates.
+        for (ModelInstance *extra : arrange_model(false)) {
+            ModelObject *o = extra->get_object();
+            for (size_t k = 0; k < o->instances.size(); ++k)
+                if (o->instances[k] == extra && o->instances.size() > 1) { o->delete_instance(k); break; }
+        }
     } else if (cmd == "rename") {
         (v ? v->name : sel->name) = a.at("name").get<std::string>();
     } else if (cmd == "printable") {

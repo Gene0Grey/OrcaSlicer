@@ -47,16 +47,20 @@ data class HeightRange(val lo: Double, val hi: Double, val settings: Int)
 data class PlateObject(
     val name: String, val offset: List<Double>, val rotation: List<Double>, val scale: List<Double>, val size: List<Double>,
     val selected: Boolean, val outside: Boolean, val primary: Boolean = selected, val instances: Int = 1, val printable: Boolean = true,
-    val filament: Int = 0, val settings: Int = 0, val inch: Boolean = false, val meter: Boolean = false, val source: String = "",
+    val filament: Int = 0, val settings: Int = 0, val inch: Boolean = false, val meter: Boolean = false, val source: String = "", val plate: Int = 0,
     val volumes: List<PlateVolume> = emptyList(), val ranges: List<HeightRange> = emptyList(),
 )
 
 val VOLUME_TYPES = listOf("Part", "Negative part", "Modifier", "Support blocker", "Support enforcer")
 
 data class RoleStat(val role: Int, val name: String, val time: Double, val percent: Double, val meters: Double, val grams: Double)
-data class SliceStats(val roles: List<RoleStat>, val travelTime: Double, val totalTime: Double, val prepareTime: Double, val meters: Double, val grams: Double, val gcode: String)
+data class SliceStats(val roles: List<RoleStat>, val travelTime: Double, val totalTime: Double, val prepareTime: Double, val meters: Double, val grams: Double, val gcode: String,
+                      val filaments: List<FilamentUse> = emptyList(), val cost: Double = 0.0, val changes: Int = 0)
 
 data class Vendor(val id: String, val name: String, val models: List<String>)
+
+data class PlateInfo(val name: String, val locked: Boolean, val sliced: Boolean, val objects: Int, val originX: Double, val originY: Double)
+data class FilamentUse(val filament: Int, val meters: Double, val grams: Double, val flushGrams: Double, val cost: Double)
 
 /** Everything the screens show; all native calls go through here on the IO dispatcher. */
 class AppState(private val context: Context) {
@@ -83,6 +87,13 @@ class AppState(private val context: Context) {
     var objectKeys: List<String> = emptyList(); private set
     /** Overrides per (object, part); part -1 = the object, >= 0 a part, <= -2 a height range. */
     val objectValues = mutableStateMapOf<Pair<Int, Int>, Map<String, String>>()
+    var plates by mutableStateOf(listOf(PlateInfo("", false, false, 0, 0.0, 0.0)))
+    var currentPlate by mutableIntStateOf(0)
+    /** The G-code file open in the viewer, "" when Preview shows a slice. */
+    var viewerFile by mutableStateOf("")
+    /** Bumped by every edit that makes the slice stale (drives background slicing). */
+    var edits by mutableIntStateOf(0)
+    var autoSlice by mutableStateOf(prefs.getBoolean("auto_slice", false))
     var recent by mutableStateOf(prefs.getString("recent", "")!!.split('\n').filter { it.isNotBlank() })
 
     suspend fun start() = withContext(Dispatchers.IO) {
@@ -98,6 +109,7 @@ class AppState(private val context: Context) {
         objectKeys = JSONArray(OrcaCore.objectSettingKeys()).let { a -> (0 until a.length()).map(a::getString) }
         val vendor = prefs.getString("vendor", null)
         if (vendor != null) loadVendor(vendor, prefs.getString("printer", "")!!)
+        refreshPlates()
         busy = null
     }
 
@@ -111,6 +123,7 @@ class AppState(private val context: Context) {
 
     suspend fun selectPreset(kind: Int, slot: Int, name: String) = withContext(Dispatchers.IO) {
         applyState(OrcaCore.selectPreset(kind, slot, name))
+        refreshObjects(); invalidate()
         if (kind == OrcaCore.KIND_PRINTER) prefs.edit().putString("printer", name).apply()
     }
 
@@ -120,6 +133,7 @@ class AppState(private val context: Context) {
     suspend fun setValue(kind: Int, key: String, value: String) = withContext(Dispatchers.IO) {
         OrcaCore.setValue(kind, key, value)?.let { error = it }
         applyState(OrcaCore.state())
+        invalidate()
     }
 
     suspend fun discard(kind: Int) = withContext(Dispatchers.IO) { OrcaCore.discardChanges(kind); applyState(OrcaCore.state()) }
@@ -133,7 +147,7 @@ class AppState(private val context: Context) {
         if (r.startsWith("{")) error = JSONObject(r).optString("error") else applyObjects(r)
         if (projectName == "Untitled") projectName = file.nameWithoutExtension
         remember(file.path)
-        stats = null
+        invalidate()
         busy = null
     }
 
@@ -143,14 +157,75 @@ class AppState(private val context: Context) {
     }
 
     suspend fun objectOp(op: Int, index: Int = selected) = withContext(Dispatchers.IO) {
-        applyObjects(OrcaCore.objectOp(op, index)); stats = null
+        applyObjects(OrcaCore.objectOp(op, index)); invalidate()
     }
 
     suspend fun setTransform(index: Int, values: DoubleArray) = withContext(Dispatchers.IO) {
-        applyObjects(OrcaCore.setTransform(index, values)); stats = null
+        applyObjects(OrcaCore.setTransform(index, values)); invalidate()
     }
 
+    /** The slice no longer matches the plate. */
+    fun invalidate() { stats = null; edits++; refreshPlates() }
+
+    fun refreshPlates() {
+        val o = JSONObject(OrcaCore.plates())
+        val a = o.getJSONArray("plates")
+        plates = (0 until a.length()).map { a.getJSONObject(it) }.map { p ->
+            val origin = p.getJSONArray("origin")
+            PlateInfo(p.getString("name"), p.getBoolean("locked"), p.getBoolean("sliced"), p.getInt("objects"), origin.getDouble(0), origin.getDouble(1))
+        }
+        currentPlate = o.getInt("current")
+        viewerFile = o.optString("viewer")
+    }
+
+    /** Plate commands (Plates.cpp); false when refused. */
+    suspend fun plateCmd(cmd: String, vararg args: Pair<String, Any?>): Boolean = withContext(Dispatchers.IO) {
+        val a = JSONObject(); args.forEach { (k, v) -> a.put(k, v) }
+        val r = JSONObject(OrcaCore.plateCmd(cmd, a.toString()))
+        if (r.has("error")) { error = r.getString("error"); return@withContext false }
+        refreshObjects()
+        if (cmd != "select" && cmd != "rename" && cmd != "lock") edits++
+        refreshPlates()
+        refreshPreviewStats()
+        true
+    }
+
+    fun refreshPreviewStats() {
+        val r = JSONObject(OrcaCore.previewStats())
+        stats = if (r.has("roles")) parseStats(r) else null
+    }
+
+    suspend fun openGcode(f: File) = withContext(Dispatchers.IO) {
+        busy = "Reading G-code…"
+        val r = JSONObject(OrcaCore.openGcode(f.path))
+        busy = null
+        if (r.has("error")) { error = r.getString("error"); return@withContext false }
+        stats = parseStats(r); refreshPlates(); true
+    }
+
+    fun closeViewer() { OrcaCore.closeViewer(); refreshPlates(); refreshPreviewStats() }
+
+    suspend fun openProject(f: File) = withContext(Dispatchers.IO) {
+        busy = "Opening project…"
+        val r = JSONObject(OrcaCore.openProject(f.path))
+        busy = null
+        if (r.has("error")) { error = r.getString("error"); return@withContext false }
+        projectName = r.optString("name", projectName)
+        remember(f.path)
+        applyState(OrcaCore.state()); refreshObjects(); invalidate(); true
+    }
+
+    suspend fun saveProject(file: File, withGcode: Boolean): Boolean = withContext(Dispatchers.IO) {
+        val err = OrcaCore.saveProject(file.path, withGcode)
+        if (err.isNotEmpty()) error = err
+        err.isEmpty()
+    }
+
+    fun saveAutoSlice(v: Boolean) { autoSlice = v; prefs.edit().putBoolean("auto_slice", v).apply() }
+
     suspend fun select(index: Int) = withContext(Dispatchers.IO) { OrcaCore.select(index); refreshObjects() }
+
+    fun cancelSlice() = OrcaCore.cancelSlice()
 
     /** Runs an object menu command (Edit.cpp); false when it was refused (the reason is shown). */
     suspend fun edit(cmd: String, vararg args: Pair<String, Any?>): Boolean = withContext(Dispatchers.IO) {
@@ -160,18 +235,34 @@ class AppState(private val context: Context) {
         if (r.startsWith("{")) { error = JSONObject(r).optString("error"); return@withContext false }
         applyObjects(r)
         objectValues.clear()
-        if (cmd != "toggle_select" && cmd != "select_all" && cmd != "copy_settings" && cmd != "export") stats = null
+        if (cmd != "toggle_select" && cmd != "select_all" && cmd != "copy_settings" && cmd != "export") invalidate()
         true
     }
 
-    /** Slices the plate; returns true when the preview has a result to show. */
-    suspend fun slice(): Boolean = withContext(Dispatchers.IO) {
-        sliceProgress = 0 to "Slicing…"
-        val r = JSONObject(OrcaCore.slice { p, t -> sliceProgress = p to t })
+    /** Slices a plate (default the current one); true when it has a result. Quiet: no error dialog (background slicing). */
+    suspend fun slice(plate: Int = currentPlate, label: String = "", quiet: Boolean = false): Boolean = withContext(Dispatchers.IO) {
+        sliceProgress = 0 to "${label}Slicing…"
+        val r = JSONObject(OrcaCore.slice(plate) { p, t -> sliceProgress = p to "$label$t" })
         sliceProgress = null
-        if (r.has("error")) { error = r.getString("error"); return@withContext false }
-        stats = parseStats(r)
+        refreshPlates()
+        if (r.has("error")) { if (!quiet) error = r.getString("error"); return@withContext false }
+        if (r.has("cancelled")) return@withContext false
+        if (plate == currentPlate) stats = parseStats(r)
         true
+    }
+
+    /** Slices every plate that has objects; true when all of them sliced. */
+    suspend fun sliceAll(): Boolean {
+        val todo = plates.indices.filter { plates[it].objects > 0 }
+        var ok = true
+        todo.forEachIndexed { n, p -> if (!slice(p, "PLATE ${p + 1} (${n + 1}/${todo.size}) · ")) ok = false }
+        refreshPreviewStats()
+        return ok && todo.isNotEmpty()
+    }
+
+    /** [plate number to G-code file] of the sliced plates. */
+    fun slicedFiles(): List<Pair<Int, File>> = JSONArray(OrcaCore.slicedPlates()).let { a ->
+        (0 until a.length()).map { a.getJSONObject(it) }.map { it.getInt("plate") + 1 to File(it.getString("gcode")) }
     }
 
     fun setGizmo(mode: Int) {
@@ -179,12 +270,12 @@ class AppState(private val context: Context) {
         OrcaCore.gizmoSetMode(gizmoMode)
     }
 
-    suspend fun afterGizmo() = withContext(Dispatchers.IO) { refreshObjects(); stats = null }
+    suspend fun afterGizmo() = withContext(Dispatchers.IO) { refreshObjects(); invalidate() }
 
     val pickedCount get() = objects.count { it.selected }
 
-    suspend fun undo() = withContext(Dispatchers.IO) { applyObjects(OrcaCore.undo()); objectValues.clear(); stats = null }
-    suspend fun redo() = withContext(Dispatchers.IO) { applyObjects(OrcaCore.redo()); objectValues.clear(); stats = null }
+    suspend fun undo() = withContext(Dispatchers.IO) { applyObjects(OrcaCore.undo()); objectValues.clear(); invalidate() }
+    suspend fun redo() = withContext(Dispatchers.IO) { applyObjects(OrcaCore.redo()); objectValues.clear(); invalidate() }
 
     fun refreshObjectValues(index: Int, part: Int = -1) {
         objectValues[index to part] = JSONObject(OrcaCore.objectValues(index, part)).let { o -> o.keys().asSequence().associateWith { o.getString(it) } }
@@ -195,7 +286,7 @@ class AppState(private val context: Context) {
         OrcaCore.setObjectValue(index, part, key, value)?.let { error = it }
         refreshObjectValues(index, part)
         refreshObjects()
-        stats = null
+        invalidate()
     }
 
     fun refreshValues(kind: Int) {
@@ -211,7 +302,7 @@ class AppState(private val context: Context) {
         objects = (0 until a.length()).map { a.getJSONObject(it) }.map { o ->
             PlateObject(o.getString("name"), o.d("offset"), o.d("rotation"), o.d("scale"), o.d("size"), o.getBoolean("selected"), o.optBoolean("outside"),
                 o.optBoolean("primary", o.getBoolean("selected")), o.optInt("instances", 1), o.optBoolean("printable", true), o.optInt("filament"),
-                o.optInt("settings"), o.optBoolean("inch"), o.optBoolean("meter"), o.optString("source"),
+                o.optInt("settings"), o.optBoolean("inch"), o.optBoolean("meter"), o.optString("source"), o.optInt("plate"),
                 o.list("volumes").map { v -> PlateVolume(v.getString("name"), v.getInt("type"), v.getInt("filament"), v.getInt("settings"),
                     v.d("offset"), v.d("rotation"), v.d("scale"), v.d("size")) },
                 o.list("ranges").map { r -> HeightRange(r.getDouble("lo"), r.getDouble("hi"), r.getInt("settings")) })
@@ -245,6 +336,10 @@ class AppState(private val context: Context) {
         } },
         travelTime = r.getDouble("travelTime"), totalTime = r.getDouble("totalTime"), prepareTime = r.getDouble("prepareTime"),
         meters = r.getDouble("meters"), grams = r.getDouble("grams"), gcode = r.getString("gcode"),
+        filaments = r.optJSONArray("filaments")?.let { a -> (0 until a.length()).map { a.getJSONObject(it) }.map {
+            FilamentUse(it.getInt("filament"), it.optDouble("meters", 0.0), it.optDouble("grams", 0.0), it.optDouble("flushGrams", 0.0), it.optDouble("cost", 0.0))
+        } }.orEmpty(),
+        cost = r.optDouble("cost", 0.0), changes = r.optInt("changes", 0),
     )
 
     private fun remember(path: String) {

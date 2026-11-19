@@ -24,6 +24,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -60,7 +63,7 @@ import java.util.Locale
 
 /** Home: the name on a flap header, two departures (new / open), and the recent-files board. */
 @Composable
-fun HomeScreen(state: AppState, onNew: () -> Unit, onOpen: () -> Unit, onRecent: (String) -> Unit) {
+fun HomeScreen(state: AppState, onNew: () -> Unit, onOpen: () -> Unit, onOpenProject: () -> Unit, onOpenGcode: () -> Unit, onRecent: (String) -> Unit) {
     val stamp = remember { SimpleDateFormat("dd MMM HH:mm", Locale.getDefault()) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         Column(Modifier.fillMaxWidth().steel().padding(horizontal = 12.dp, vertical = 16.dp)) {
@@ -82,6 +85,8 @@ fun HomeScreen(state: AppState, onNew: () -> Unit, onOpen: () -> Unit, onRecent:
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Departure(Icons.Default.Add, "New project", "Empty plate, current printer", Board.teal, onNew)
             Departure(Icons.Default.FolderOpen, "Open model", "STL · 3MF · OBJ · STEP", Board.steelLight, onOpen)
+            Departure(Icons.Default.Inventory2, "Open project", "3MF with plates and settings", Board.steelLight, onOpenProject)
+            Departure(Icons.Default.Visibility, "Open G-code", "View a sliced file", Board.steelLight, onOpenGcode)
         }
         BoardHeading("Recently opened")
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 4.dp)) {
@@ -158,7 +163,7 @@ fun DeviceScreen(state: AppState) {
 
 /** Project: what this plate will print with, and what is on it. */
 @Composable
-fun ProjectScreen(state: AppState) {
+fun ProjectScreen(state: AppState, host: PlateHost) {
     var name by remember { mutableStateOf(state.projectName) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         BoardHeading("Project")
@@ -169,11 +174,17 @@ fun ProjectScreen(state: AppState) {
         state.presets.slots.forEachIndexed { i, s ->
             BoardRow("Filament ${i + 1}") { Swatch(s.color, i + 1); FlapCell(s.name.uppercase(), Modifier.weight(1f)) }
         }
-        BoardHeading("Plate 01", Modifier.padding(top = 12.dp))
-        if (state.objects.isEmpty()) Text("EMPTY PLATE.", Modifier.padding(16.dp), style = MaterialTheme.typography.labelMedium, color = Board.steelLight)
-        state.objects.forEach { o ->
-            BoardRow(o.name.ifBlank { "Object" }) {
-                FlapCell("%.1f × %.1f × %.1f MM".format(o.size[0], o.size[1], o.size[2]), Modifier.weight(1f), color = if (o.outside) Board.red else Board.letter)
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Departure(Icons.Default.Save, "Save project", "3MF · plates · settings", Board.teal) { host.saveProject(false) }
+        }
+        state.plates.forEachIndexed { pi, p ->
+            BoardHeading(plateLabel(state, pi), Modifier.padding(top = 12.dp))
+            val on = state.objects.filter { it.plate == pi }
+            if (on.isEmpty()) Text("EMPTY PLATE.", Modifier.padding(16.dp), style = MaterialTheme.typography.labelMedium, color = Board.steelLight)
+            on.forEach { o ->
+                BoardRow(o.name.ifBlank { "Object" } + if (o.instances > 1) " ×${o.instances}" else "") {
+                    FlapCell("%.1f × %.1f × %.1f MM".format(o.size[0], o.size[1], o.size[2]), Modifier.weight(1f), color = if (o.outside) Board.red else Board.letter)
+                }
             }
         }
         state.stats?.let { s ->

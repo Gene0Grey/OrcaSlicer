@@ -281,7 +281,7 @@ JNI(void, gizmoEnd)(JNIEnv *, jobject)
         ModelObject *obj = g_session.model.objects[g_session.selected];
         obj->invalidate_bounding_box();
         obj->ensure_on_bed();
-        g_session.sliced = false;
+        g_session.invalidate();
     }
     g_drag = Drag();
     g_active = None;
@@ -333,7 +333,7 @@ JNI(jint, layOnFace)(JNIEnv *env, jobject, jfloat x, jfloat y, jint w, jint h, j
     obj->invalidate_bounding_box();
     obj->ensure_on_bed();
     g_session.select_only(best_obj);
-    g_session.sliced = false;
+    g_session.invalidate();
     ++g_session.scene_version;
     return best_obj;
 }

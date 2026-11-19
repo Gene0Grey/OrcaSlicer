@@ -93,6 +93,9 @@ struct GLState
     bool                viewer_ready  = false;
     bool                preview_loaded = false;
     int                 width = 1, height = 1;
+    // Plate origins (the bed meshes are built at plate 1 and drawn at each) and the current plate.
+    std::vector<Slic3r::Vec2d> plate_origins;
+    int                 current_plate = 0;
 } gl;
 
 Mesh upload(const std::vector<float> &data, int floats_per_vertex)
@@ -154,6 +157,10 @@ void rebuild_scene()
         gl.axes[2] = upload({0, 0, 0, 0, 0, len}, 3);
     }
 
+    gl.plate_origins.clear();
+    for (int p = 0; p < int(g_session.plates.size()); ++p) gl.plate_origins.push_back(g_session.plate_origin(p));
+    gl.current_plate = g_session.current;
+
     const auto *colors = g_session.bundle->project_config.option<Slic3r::ConfigOptionStrings>("filament_colour");
     auto filament_color = [colors](int ext) {
         const size_t i = size_t(std::max(1, ext) - 1);
@@ -202,12 +209,13 @@ void rebuild_scene()
 void load_preview()
 {
     gl.preview_loaded = false;
-    if (!gl.viewer_ready || !g_session.sliced || !g_session.result) return;
+    const Slic3r::GCodeProcessorResult *result = g_session.preview_result();
+    if (!gl.viewer_ready || result == nullptr) return;
     std::vector<std::string> colors;
     if (const auto *c = g_session.bundle->project_config.option<Slic3r::ConfigOptionStrings>("filament_colour"))
         colors = c->values;
     if (colors.empty()) colors.push_back("#26A69A");
-    libvgcode::GCodeInputData data = libvgcode::convert(*g_session.result, colors, colors, gl.viewer);
+    libvgcode::GCodeInputData data = libvgcode::convert(*result, colors, colors, gl.viewer);
     gl.viewer.load(std::move(data));
     // As on the desktop: the moves slider walks the top layer only.
     if (!gl.viewer.is_top_layer_only_view_range()) gl.viewer.toggle_top_layer_only_view_range();
@@ -292,25 +300,34 @@ JNI(void, glRender)(JNIEnv *env, jobject, jint mode, jfloatArray jview, jfloatAr
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    // Plate
+    // Plates: every plate of the project in Prepare (the current one edged in Orca teal), the
+    // first plate's frame in Preview (G-code is in plate-local coordinates).
     glUseProgram(gl.flat.id);
-    if (gl.bed_fill.count) {
-        glUniformMatrix4fv(gl.flat.mvp, 1, GL_FALSE, mvp);
-        const std::array<float, 4> fill{0.165f, 0.176f, 0.192f, 1.f}; // brushed steel
-        glUniform4fv(gl.flat.color, 1, fill.data());
-        glBindBuffer(GL_ARRAY_BUFFER, gl.bed_fill.vbo);
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
-        glDrawArrays(GL_TRIANGLES, 0, gl.bed_fill.count);
+    const size_t plates = mode == 0 ? std::max<size_t>(1, gl.plate_origins.size()) : 1;
+    for (size_t p = 0; p < plates; ++p) {
+        const Slic3r::Vec2d o = mode == 0 && p < gl.plate_origins.size() ? gl.plate_origins[p] : Slic3r::Vec2d::Zero();
+        float t[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, float(o.x()), float(o.y()), 0, 1}, pm[16];
+        mul(mvp, t, pm);
+        const bool live = mode == 1 || int(p) == gl.current_plate;
+        if (gl.bed_fill.count) {
+            glUniformMatrix4fv(gl.flat.mvp, 1, GL_FALSE, pm);
+            const std::array<float, 4> fill{0.165f, 0.176f, 0.192f, 1.f}; // brushed steel
+            glUniform4fv(gl.flat.color, 1, fill.data());
+            glBindBuffer(GL_ARRAY_BUFFER, gl.bed_fill.vbo);
+            glEnableVertexAttribArray(0);
+            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
+            glDrawArrays(GL_TRIANGLES, 0, gl.bed_fill.count);
+        }
+        draw_lines(gl.bed_grid, pm, {0.26f, 0.28f, 0.30f, 1.f});
+        glLineWidth(3.f);
+        draw_lines(gl.bed_border, pm, live ? std::array<float, 4>{0.0f, 0.59f, 0.53f, 1.f} : std::array<float, 4>{0.36f, 0.37f, 0.39f, 1.f});
+        if (p == 0) {
+            draw_lines(gl.axes[0], pm, {0.85f, 0.15f, 0.15f, 1.f});
+            draw_lines(gl.axes[1], pm, {0.15f, 0.75f, 0.15f, 1.f});
+            draw_lines(gl.axes[2], pm, {0.15f, 0.25f, 0.9f, 1.f});
+        }
+        glLineWidth(1.f);
     }
-    draw_lines(gl.bed_grid, mvp, {0.26f, 0.28f, 0.30f, 1.f});
-    glLineWidth(3.f);
-    draw_lines(gl.bed_border, mvp, {0.0f, 0.59f, 0.53f, 1.f}); // Orca teal plate edge
-    glLineWidth(3.f);
-    draw_lines(gl.axes[0], mvp, {0.85f, 0.15f, 0.15f, 1.f});
-    draw_lines(gl.axes[1], mvp, {0.15f, 0.75f, 0.15f, 1.f});
-    draw_lines(gl.axes[2], mvp, {0.15f, 0.25f, 0.9f, 1.f});
-    glLineWidth(1.f);
     glDisableVertexAttribArray(0);
 
     if (mode == 0) {

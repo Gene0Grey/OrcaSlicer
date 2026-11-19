@@ -22,6 +22,8 @@ import androidx.compose.material.icons.automirrored.filled.RotateRight
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesomeMosaic
+import androidx.compose.material.icons.filled.Autorenew
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.SaveAlt
@@ -86,7 +88,7 @@ fun PlateScreen(state: AppState, host: PlateHost, wide: Boolean) {
             host.camera.bottomInsetPx = with(androidx.compose.ui.platform.LocalDensity.current) { bottomInset.toPx() }
             SceneHost(state, host)
             if (prepare) PrepareOverlay(state, host, bottomInset) else PreviewOverlay(state, host, bottomInset)
-            state.sliceProgress?.let { (p, t) -> SliceProgressBoard(p, t, Modifier.align(Alignment.TopCenter).padding(top = 72.dp)) }
+            state.sliceProgress?.let { (p, t) -> SliceProgressBoard(p, t, Modifier.align(Alignment.TopCenter).padding(top = 72.dp)) { state.cancelSlice() } }
         }
     }
     if (wide) {
@@ -173,8 +175,11 @@ private fun PlateBar(state: AppState, host: PlateHost) {
     if (addShape) AddShapeDialog(state) { addShape = false }
     Row(Modifier.fillMaxWidth().background(Board.flap.copy(alpha = 0.86f)).padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        FlapCell("PLATE 01", color = Board.tealText)
-        FlapCell(when (val n = state.objects.size) { 0 -> "EMPTY"; 1 -> "1 OBJECT"; else -> "$n OBJECTS" }, style = MaterialTheme.typography.labelMedium)
+        var platesOpen by remember { mutableStateOf(false) }
+        PlateSwitcher(state, host) { platesOpen = true }
+        if (platesOpen) PlatesDialog(state, host) { platesOpen = false }
+        val n = state.plates.getOrNull(state.currentPlate)?.objects ?: 0
+        FlapCell(when (n) { 0 -> "EMPTY"; 1 -> "1 OBJ"; else -> "$n OBJ" }, style = MaterialTheme.typography.labelMedium)
         Spacer(Modifier.weight(1f))
         BarIcon(Icons.AutoMirrored.Filled.Undo, "Undo", state.canUndo) { scope.launch { state.undo() } }
         BarIcon(Icons.AutoMirrored.Filled.Redo, "Redo", state.canRedo) { scope.launch { state.redo() } }
@@ -184,7 +189,16 @@ private fun PlateBar(state: AppState, host: PlateHost) {
             DropdownMenu(more, { more = false }, containerColor = Board.frame) {
                 MenuItem("Add shape or handy model", Icons.Default.Category, true) { more = false; addShape = true }
                 MenuItem("Select all", Icons.Default.SelectAll, state.objects.isNotEmpty()) { more = false; scope.launch { state.edit("select_all") } }
-                MenuItem("Arrange all", Icons.Default.AutoAwesomeMosaic, state.objects.isNotEmpty()) { more = false; scope.launch { state.objectOp(2) } }
+                MenuItem("Arrange plate", Icons.Default.AutoAwesomeMosaic, state.objects.isNotEmpty()) { more = false; scope.launch { state.plateCmd("arrange") } }
+                MenuItem("Slice all plates", Icons.Default.NearMe, state.objects.isNotEmpty()) { more = false; host.sliceAll() }
+                MenuItem(if (state.autoSlice) "Background slicing: on" else "Background slicing: off", Icons.Default.Autorenew, true) {
+                    more = false; state.saveAutoSlice(!state.autoSlice)
+                }
+                MenuItem("Save project (3MF)", Icons.Default.SaveAlt, true) { more = false; host.saveProject(false) }
+                MenuItem("Export all sliced plates", Icons.Default.SaveAlt, state.plates.any { it.sliced }) { more = false; host.saveProject(true) }
+                MenuItem("Share sliced plates' G-code", Icons.Default.Share, state.plates.any { it.sliced }) {
+                    more = false; host.shareFiles(state.slicedFiles().map { it.second }.filter { it.exists() })
+                }
                 MenuItem("Export plate as STL", Icons.Default.SaveAlt, state.objects.isNotEmpty()) {
                     more = false
                     host.saveFile("${state.projectName}.stl") { f -> state.edit("export", "path" to f.path, "format" to "stl", "objects" to state.objects.indices.toList()) }
@@ -284,11 +298,12 @@ private fun ObjectAction(icon: ImageVector, label: String, tint: Color = Board.l
     }
 
 @Composable
-private fun SliceProgressBoard(percent: Int, text: String, modifier: Modifier) =
+private fun SliceProgressBoard(percent: Int, text: String, modifier: Modifier, onCancel: () -> Unit) =
     Row(modifier.padding(horizontal = 16.dp).steel().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
         FlapCell("SLICING", color = Board.tealText)
         FlapCell("${percent.coerceIn(0, 100)}%".padStart(4), style = MaterialTheme.typography.titleMedium)
-        FlapCell(text.uppercase().take(26), Modifier.widthIn(max = 220.dp), style = MaterialTheme.typography.labelMedium, color = Board.steelLight)
+        FlapCell(text.uppercase().take(26), Modifier.widthIn(max = 200.dp), style = MaterialTheme.typography.labelMedium, color = Board.steelLight)
+        IconButton(onCancel, Modifier.flap()) { Icon(Icons.Default.Close, "Cancel slicing", tint = Board.red) }
     }
 
 // ---- Preview -------------------------------------------------------------------------------
@@ -297,6 +312,16 @@ private fun SliceProgressBoard(percent: Int, text: String, modifier: Modifier) =
 private fun PreviewOverlay(state: AppState, host: PlateHost, bottomInset: Dp) {
     Box(Modifier.fillMaxSize()) {
         PreviewSliders(state.stats, host.preview, host.scene, bottomInset)
+        var platesOpen by remember { mutableStateOf(false) }
+        Row(Modifier.align(Alignment.TopStart).padding(top = 8.dp, start = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (state.viewerFile.isNotBlank()) {
+                FlapCell(java.io.File(state.viewerFile).name.uppercase().take(22), color = Board.amber, style = MaterialTheme.typography.labelMedium)
+                IconButton({ state.closeViewer(); host.preview = null; host.scene?.requestPreviewInfo() }, Modifier.flap()) { Icon(Icons.Default.Close, "Close G-code file", tint = Board.letter) }
+            } else {
+                PlateSwitcher(state, host) { platesOpen = true }
+            }
+        }
+        if (platesOpen) PlatesDialog(state, host) { platesOpen = false; host.preview = null; host.scene?.requestPreviewInfo() }
         if (state.stats != null) Row(Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             IconButton(host.shareGcode, Modifier.flap()) { Icon(Icons.Default.Share, "Share G-code", tint = Board.letter) }
             ExtendedFloatingActionButton(onClick = host.exportGcode, containerColor = Board.teal, contentColor = Board.flap,

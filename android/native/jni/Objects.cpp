@@ -4,7 +4,6 @@
 
 #include "Session.hpp"
 
-#include "libslic3r/ModelArrange.hpp"
 #include "libslic3r/Orient.hpp"
 
 using namespace Slic3r;
@@ -60,6 +59,7 @@ json objects_json()
                        {"selected", g_session.picked.count(int(i)) > 0},
                        {"primary", int(i) == g_session.selected},
                        {"outside", g_session.outside(*o)},
+                       {"plate", g_session.plate_of(*o, 0)},
                        {"instances", o->instances.size()},
                        {"printable", inst->printable},
                        {"filament", extruder_of(o->config)},
@@ -71,23 +71,21 @@ json objects_json()
     return out;
 }
 
-void arrange_model()
-{
-    const BoundingBoxf3 bv = bed_volume();
-    BoundingBox bed(Point(scaled(bv.min.x()), scaled(bv.min.y())), Point(scaled(bv.max.x()), scaled(bv.max.y())));
-    arrangement::ArrangeParams params;
-    params.min_obj_distance = scaled(6.);
-    arrange_objects(g_session.model, bed, params, [](arrangement::ArrangePolygon &ap) { ++ap.bed_idx; });
-}
-
 JNI(jstring, addModel)(JNIEnv *env, jobject, jstring path)
 {
     std::lock_guard lock(g_session.mutex);
     try {
         Model loaded = Model::read_from_file(jstr(env, path), nullptr, nullptr, LoadStrategy::LoadModel | LoadStrategy::AddDefaultInstances);
         g_session.snapshot();
+        // New objects start in the middle of the current plate; the arrange below spreads them.
+        const BoundingBoxf3 bed = bed_volume();
         for (ModelObject *o : loaded.objects) {
             ModelObject *added = g_session.model.add_object(*o);
+            for (ModelInstance *inst : added->instances) {
+                const Vec3d c = added->instance_bounding_box(0).center();
+                inst->set_offset(inst->get_offset() + Vec3d(bed.center().x() - c.x(), bed.center().y() - c.y(), 0.));
+            }
+            added->invalidate_bounding_box();
             added->ensure_on_bed();
         }
         arrange_model();

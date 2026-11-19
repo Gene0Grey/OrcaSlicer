@@ -44,18 +44,15 @@ jstring to_j(JNIEnv *env, const std::string &s) { return env->NewStringUTF(s.c_s
 
 void model_changed()
 {
-    g_session.sliced = false;
+    g_session.invalidate();
     ++g_session.scene_version;
 }
 
 BoundingBoxf3 bed_volume()
 {
-    const DynamicPrintConfig &cfg = g_session.bundle->printers.get_edited_preset().config;
-    BoundingBoxf3 bb;
-    if (const auto *pa = cfg.option<ConfigOptionPoints>("printable_area"))
-        for (const Vec2d &p : pa->values) bb.merge(Vec3d(p.x(), p.y(), 0.));
-    bb.merge(Vec3d(bb.min.x(), bb.min.y(), cfg.opt_float("printable_height")));
-    return bb;
+    const BoundingBoxf bed = g_session.bed_rect();
+    const Vec2d o = g_session.plate_origin(g_session.current);
+    return BoundingBoxf3(Vec3d(bed.min.x() + o.x(), bed.min.y() + o.y(), 0.), Vec3d(bed.max.x() + o.x(), bed.max.y() + o.y(), g_session.bed_height()));
 }
 
 namespace {
@@ -145,72 +142,6 @@ json option_defs_json()
     }
     return out;
 }
-
-// The numbers behind the desktop preview legend: time and filament per line type, and totals.
-json slice_stats_json()
-{
-    const GCodeProcessorResult &r = *g_session.result;
-    const auto &stats = r.print_statistics;
-    std::map<int, double> role_time;
-    double travel_time = 0.;
-    for (const auto &mv : r.moves) {
-        if (mv.type == EMoveType::Extrude)
-            role_time[int(mv.extrusion_role)] += mv.time[0];
-        else if (mv.type == EMoveType::Travel)
-            travel_time += mv.time[0];
-    }
-    const double total = stats.modes[0].time;
-    json roles = json::array();
-    double total_m = 0., total_g = 0.;
-    for (const auto &[role, t] : role_time) {
-        json row{{"role", role}, {"name", ExtrusionEntity::role_to_string(ExtrusionRole(role))}, {"time", t},
-                 {"percent", total > 0. ? 100. * t / total : 0.}};
-        if (auto it = stats.used_filaments_per_role.find(ExtrusionRole(role)); it != stats.used_filaments_per_role.end()) {
-            row["meters"] = it->second.first;
-            row["grams"]  = it->second.second;
-            total_m += it->second.first;
-            total_g += it->second.second;
-        }
-        roles.push_back(std::move(row));
-    }
-    return {{"roles", roles}, {"travelTime", travel_time}, {"totalTime", total},
-            {"prepareTime", stats.modes[0].prepare_time}, {"meters", total_m}, {"grams", total_g},
-            {"gcode", g_session.gcode_path}};
-}
-
-// Reports slicing progress to Kotlin. The slicer calls back from its TBB worker threads, so each
-// call attaches its thread to the VM (as a daemon: TBB keeps its workers) and the listener is a
-// global reference.
-struct ProgressListener
-{
-    JavaVM   *vm = nullptr;
-    jobject   obj = nullptr;
-    jmethodID method = nullptr;
-    std::mutex mutex;
-
-    ProgressListener(JNIEnv *env, jobject listener)
-    {
-        env->GetJavaVM(&vm);
-        obj    = env->NewGlobalRef(listener);
-        method = env->GetMethodID(env->GetObjectClass(listener), "onProgress", "(ILjava/lang/String;)V");
-    }
-    ~ProgressListener()
-    {
-        JNIEnv *env = nullptr;
-        if (vm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6) == JNI_OK) env->DeleteGlobalRef(obj);
-    }
-    void operator()(int percent, const std::string &text)
-    {
-        std::lock_guard lock(mutex);
-        JNIEnv *env = nullptr;
-        if (vm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6) != JNI_OK &&
-            vm->AttachCurrentThreadAsDaemon(&env, nullptr) != JNI_OK)
-            return;
-        jstring t = env->NewStringUTF(text.c_str());
-        env->CallVoidMethod(obj, method, jint(percent), t);
-        env->DeleteLocalRef(t);
-    }
-};
 
 } // namespace
 
@@ -405,46 +336,4 @@ JNI(jstring, savePreset)(JNIEnv *env, jobject, jint kind, jstring name)
     } catch (const std::exception &e) {
         return to_j(env, json{{"error", e.what()}}.dump());
     }
-}
-
-JNI(jstring, slice)(JNIEnv *env, jobject, jobject listener)
-{
-    std::lock_guard lock(g_session.mutex);
-    try {
-        PresetBundle &b = *g_session.bundle;
-        if (g_session.model.objects.empty())
-            return to_j(env, json{{"error", "Add a model to the plate first."}}.dump());
-        DynamicPrintConfig cfg = b.full_config();
-        ProgressListener progress(env, listener);
-
-        g_session.print = std::make_unique<Print>();
-        Print &print = *g_session.print;
-        print.is_BBL_printer() = b.is_bbl_vendor();
-        print.apply(g_session.model, cfg);
-        StringObjectException err = print.validate();
-        if (!err.string.empty())
-            return to_j(env, json{{"error", err.string}}.dump());
-        Model::setExtruderParams(cfg, int(b.filament_presets.size()));
-        Model::setPrintSpeedTable(cfg, print.config());
-        print.set_status_callback([&progress](const PrintBase::SlicingStatus &s) {
-            if (s.percent >= 0) progress(s.percent, s.text);
-        });
-        print.process();
-
-        const fs::path out = fs::path(temporary_dir()) / "plate_1.gcode";
-        g_session.result = std::make_unique<GCodeProcessorResult>();
-        g_session.gcode_path = print.export_gcode(out.string(), g_session.result.get(), nullptr);
-        g_session.sliced = true;
-        ++g_session.preview_version;
-        progress(100, "Done");
-        return to_j(env, slice_stats_json().dump());
-    } catch (const std::exception &e) {
-        return to_j(env, json{{"error", e.what()}}.dump());
-    }
-}
-
-JNI(jstring, gcodePath)(JNIEnv *env, jobject)
-{
-    std::lock_guard lock(g_session.mutex);
-    return to_j(env, g_session.sliced ? g_session.gcode_path : std::string());
 }

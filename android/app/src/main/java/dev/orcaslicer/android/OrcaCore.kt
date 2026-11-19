@@ -36,8 +36,27 @@ object OrcaCore {
 
     /** values: offset xyz, rotation xyz (radians), scale xyz */
     external fun setTransform(index: Int, values: DoubleArray): String
-    external fun slice(listener: ProgressListener): String
+    /** Slices one plate (off the session lock). Returns its stats, {"cancelled"} or {"error"}. */
+    external fun slice(plate: Int, listener: ProgressListener): String
+    external fun cancelSlice()
+    /** The current plate's G-code, or the viewer's file. */
     external fun gcodePath(): String
+    /** Stats of what Preview shows ({} when nothing is sliced). */
+    external fun previewStats(): String
+    /** [{plate, gcode}] of every sliced plate. */
+    external fun slicedPlates(): String
+    /** G-code viewer: reads a G-code file for Preview. */
+    external fun openGcode(path: String): String
+    external fun closeViewer()
+
+    /** {current, plates: [{name, locked, sliced, objects, origin}], viewer} */
+    external fun plates(): String
+    /** select / add / delete / rename / duplicate / lock / move_objects / arrange (Plates.cpp) */
+    external fun plateCmd(cmd: String, args: String): String
+
+    /** 3MF project in the desktop's format; withGcode adds the sliced plates. Returns "" or an error. */
+    external fun saveProject(path: String, withGcode: Boolean): String
+    external fun openProject(path: String): String
 
     /** mode: 0 off, 1 move, 2 rotate, 3 scale */
     external fun gizmoSetMode(mode: Int)

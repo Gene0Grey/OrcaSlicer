@@ -83,6 +83,9 @@ class PlateHost(val camera: OrbitCamera, val cacheDir: File) {
     var exportGcode: () -> Unit = {}
     var shareGcode: () -> Unit = {}
     var slice: () -> Unit = {}
+    var sliceAll: () -> Unit = {}
+    /** Saves the project as 3MF; withGcode adds every sliced plate (desktop "Export all plate sliced file"). */
+    var saveProject: (withGcode: Boolean) -> Unit = {}
     var addPrinter: () -> Unit = {}
     var editPreset: (Int) -> Unit = {}
     var exactTransform: () -> Unit = {}
@@ -92,9 +95,13 @@ class PlateHost(val camera: OrbitCamera, val cacheDir: File) {
     var saveFile: (name: String, produce: suspend (File) -> Boolean) -> Unit = { _, _ -> }
     var shareFiles: (List<File>) -> Unit = {}
 
+    /** Frames the current plate (Prepare) or the sliced plate, which G-code puts at plate 1 (Preview). */
     fun fit(state: AppState) {
         val b = state.presets.bed
-        if (b.isNotEmpty()) camera.fit(b.minOf { it.first }.toFloat(), b.minOf { it.second }.toFloat(), b.maxOf { it.first }.toFloat(), b.maxOf { it.second }.toFloat())
+        val p = state.plates.getOrNull(state.currentPlate)
+        val (ox, oy) = if (state.screen == Screen.Prepare && p != null) p.originX to p.originY else 0.0 to 0.0
+        if (b.isNotEmpty()) camera.fit((b.minOf { it.first } + ox).toFloat(), (b.minOf { it.second } + oy).toFloat(),
+            (b.maxOf { it.first } + ox).toFloat(), (b.maxOf { it.second } + oy).toFloat())
         scene?.requestRender()
     }
 }
@@ -140,14 +147,23 @@ fun App(state: AppState) {
     host.addPrinter = { picker = true }
     host.editPreset = { editor = it }
     host.exactTransform = { transform = true }
-    host.slice = {
-        scope.launch {
-            if (state.slice()) { host.preview = null; state.screen = Screen.Preview; host.scene?.mode = 1; host.scene?.requestPreviewInfo() }
-        }
+    fun showPreview() { host.preview = null; state.screen = Screen.Preview; host.scene?.mode = 1; host.scene?.requestPreviewInfo(); host.fit(state) }
+    host.slice = { scope.launch { if (state.slice()) showPreview() } }
+    host.sliceAll = { scope.launch { if (state.sliceAll()) showPreview() } }
+    host.saveProject = { withGcode ->
+        host.saveFile(if (withGcode) "${state.projectName}.gcode.3mf" else "${state.projectName}.3mf") { f -> state.saveProject(f, withGcode) }
+    }
+    // Background slicing (desktop preference): re-slice the current plate a moment after each edit.
+    LaunchedEffect(state.edits, state.autoSlice, state.currentPlate) {
+        if (!state.autoSlice || state.objects.isEmpty() || state.objects.any { it.outside }) return@LaunchedEffect
+        state.cancelSlice()
+        kotlinx.coroutines.delay(800)
+        state.slice(quiet = true)
+        if (state.screen == Screen.Preview) host.scene?.requestPreviewInfo()
     }
 
     LaunchedEffect(Unit) { runCatching { state.start() }.onFailure { state.error = it.message; state.busy = null } }
-    LaunchedEffect(state.presets.bed) { host.fit(state) }
+    LaunchedEffect(state.presets.bed, state.screen) { host.fit(state) }
     LaunchedEffect(state.objects, state.presets, state.screen, state.gizmoMode) {
         host.scene?.mode = if (state.screen == Screen.Preview) 1 else 0
         host.scene?.gizmoMode = state.gizmoMode
@@ -164,9 +180,11 @@ fun App(state: AppState) {
                     Screen.Home -> HomeScreen(state,
                         onNew = { scope.launch { state.objectOp(4, -1); state.projectName = "Untitled"; state.screen = Screen.Prepare } },
                         onOpen = host.openModel,
+                        onOpenProject = { host.pickFile { f -> scope.launch { if (state.openProject(f)) { state.screen = Screen.Prepare; host.fit(state) } } } },
+                        onOpenGcode = { host.pickFile { f -> scope.launch { if (state.openGcode(f)) showPreview() } } },
                         onRecent = { path -> scope.launch { state.addRecent(path); state.screen = Screen.Prepare } })
                     Screen.Device -> DeviceScreen(state)
-                    Screen.Project -> ProjectScreen(state)
+                    Screen.Project -> ProjectScreen(state, host)
                     Screen.Prepare, Screen.Preview -> PlateScreen(state, host, wide)
                 }
                 state.busy?.let { BusyBoard(it, Modifier.align(Alignment.Center)) }
