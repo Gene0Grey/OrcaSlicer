@@ -85,45 +85,6 @@ void add_emboss(TriangleMesh mesh, int type, const std::string &name, double dep
     place_on_top(*o, *v, type == int(ModelVolumeType::NEGATIVE_VOLUME) ? depth : 0.);
 }
 
-// Ray from a screen point; returns (object, volume, face, world point) of the nearest hit.
-struct Hit { int obj = -1, vol = -1, face = -1; Vec3d point; };
-Hit ray_hit(float x, float y, int w, int h, const float *view, const float *proj)
-{
-    Eigen::Matrix4f vpm = Eigen::Map<const Eigen::Matrix4f>(proj) * Eigen::Map<const Eigen::Matrix4f>(view);
-    const Eigen::Matrix4d inv = vpm.cast<double>().inverse();
-    const double nx = 2. * x / w - 1., ny = 1. - 2. * y / h;
-    Eigen::Vector4d a = inv * Eigen::Vector4d(nx, ny, -1., 1.), b = inv * Eigen::Vector4d(nx, ny, 1., 1.);
-    const Vec3d o = a.head<3>() / a.w(), d = (b.head<3>() / b.w() - o).normalized();
-    Hit best;
-    double best_t = 1e30;
-    const Model &m = g_session.model;
-    for (size_t oi = 0; oi < m.objects.size(); ++oi)
-        for (const ModelInstance *inst : m.objects[oi]->instances)
-            for (size_t vi = 0; vi < m.objects[oi]->volumes.size(); ++vi) {
-                const ModelVolume *v = m.objects[oi]->volumes[vi];
-                if (!v->is_model_part()) continue;
-                const Transform3d t = inst->get_matrix() * v->get_matrix();
-                const auto &its = v->mesh().its;
-                for (size_t fi = 0; fi < its.indices.size(); ++fi) {
-                    const auto &f = its.indices[fi];
-                    const Vec3d p0 = t * its.vertices[f[0]].cast<double>(), e1 = t * its.vertices[f[1]].cast<double>() - p0,
-                                e2 = t * its.vertices[f[2]].cast<double>() - p0;
-                    const Vec3d pv = d.cross(e2);
-                    const double det = e1.dot(pv);
-                    if (std::abs(det) < 1e-12) continue;
-                    const Vec3d tv = o - p0;
-                    const double u = tv.dot(pv) / det;
-                    if (u < 0. || u > 1.) continue;
-                    const Vec3d qv = tv.cross(e1);
-                    const double vv = d.dot(qv) / det;
-                    if (vv < 0. || u + vv > 1.) continue;
-                    const double dist = e2.dot(qv) / det;
-                    if (dist > 0. && dist < best_t) { best_t = dist; best = {int(oi), int(vi), int(fi), o + d * dist}; }
-                }
-            }
-    return best;
-}
-
 json feature_json(const Measure::SurfaceFeature &f)
 {
     auto v = [](const Vec3d &p) { return json{p.x(), p.y(), p.z()}; };
@@ -262,6 +223,46 @@ std::string run(const std::string &cmd, const json &a, bool &edited)
 
 } // namespace
 
+// The nearest solid part under a screen point (declared in Session.hpp).
+RayHit ray_hit(float x, float y, int w, int h, const float *view, const float *proj, int only_object)
+{
+    Eigen::Matrix4f vpm = Eigen::Map<const Eigen::Matrix4f>(proj) * Eigen::Map<const Eigen::Matrix4f>(view);
+    const Eigen::Matrix4d inv = vpm.cast<double>().inverse();
+    const double nx = 2. * x / w - 1., ny = 1. - 2. * y / h;
+    Eigen::Vector4d a = inv * Eigen::Vector4d(nx, ny, -1., 1.), b = inv * Eigen::Vector4d(nx, ny, 1., 1.);
+    const Vec3d o = a.head<3>() / a.w(), d = (b.head<3>() / b.w() - o).normalized();
+    RayHit best;
+    double best_t = 1e30;
+    const Model &m = g_session.model;
+    for (size_t oi = 0; oi < m.objects.size(); ++oi) {
+        if (only_object >= 0 && int(oi) != only_object) continue;
+        for (const ModelInstance *inst : m.objects[oi]->instances)
+            for (size_t vi = 0; vi < m.objects[oi]->volumes.size(); ++vi) {
+                const ModelVolume *v = m.objects[oi]->volumes[vi];
+                if (!v->is_model_part()) continue;
+                const Transform3d t = inst->get_matrix() * v->get_matrix();
+                const auto &its = v->mesh().its;
+                for (size_t fi = 0; fi < its.indices.size(); ++fi) {
+                    const auto &f = its.indices[fi];
+                    const Vec3d p0 = t * its.vertices[f[0]].cast<double>(), e1 = t * its.vertices[f[1]].cast<double>() - p0,
+                                e2 = t * its.vertices[f[2]].cast<double>() - p0;
+                    const Vec3d pv = d.cross(e2);
+                    const double det = e1.dot(pv);
+                    if (std::abs(det) < 1e-12) continue;
+                    const Vec3d tv = o - p0;
+                    const double u = tv.dot(pv) / det;
+                    if (u < 0. || u > 1.) continue;
+                    const Vec3d qv = tv.cross(e1);
+                    const double vv = d.dot(qv) / det;
+                    if (vv < 0. || u + vv > 1.) continue;
+                    const double dist = e2.dot(qv) / det;
+                    if (dist > 0. && dist < best_t) { best_t = dist; best = {int(oi), int(vi), int(fi), o + d * dist}; }
+                }
+            }
+    }
+    return best;
+}
+
 // cmd: cut_preview, cut, simplify, boolean, text, svg, measure_clear. Returns objects or {"error"}.
 JNI(jstring, tool)(JNIEnv *env, jobject, jstring jcmd, jstring jargs)
 {
@@ -309,7 +310,7 @@ JNI(jstring, measurePick)(JNIEnv *env, jobject, jfloat x, jfloat y, jint w, jint
     std::lock_guard lock(g_session.mutex);
     json out;
     try {
-        const Hit hit = ray_hit(x, y, w, h, view, proj);
+        const RayHit hit = ray_hit(x, y, w, h, view, proj);
         if (hit.obj >= 0) {
             const ModelObject &o = *g_session.model.objects[hit.obj];
             // Measure in world space on a transformed copy of the part.

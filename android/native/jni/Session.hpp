@@ -55,6 +55,8 @@ struct Session
     bool                                           cut_preview = false;
     Slic3r::Transform3d                            cut_plane   = Slic3r::Transform3d::Identity();
     std::vector<Slic3r::Vec3d>                     marks;
+    // Open painting gizmo: 0 none, 1 support, 2 seam, 3 colour, 4 fuzzy skin, 5 brim ears.
+    int                                            paint_mode  = 0;
     // Bumped when the plate or its objects change / when a new slice result is ready,
     // so the GL thread knows to rebuild its buffers.
     uint64_t                                       scene_version   = 1;
@@ -191,6 +193,10 @@ void           set_plate_count(size_t n);
 // (as G-code for any plate is written in plate 1's frame). Object IDs are kept, so a Print
 // that keeps applying it re-uses its unchanged steps.  (Plates.cpp)
 Slic3r::Model  plate_model(int p);
+// Nearest solid part under a screen point (column-major view/proj); only_object >= 0 limits the
+// search to one object.  (Tools.cpp)
+struct RayHit { int obj = -1, vol = -1, face = -1; Slic3r::Vec3d point = Slic3r::Vec3d::Zero(); };
+RayHit         ray_hit(float x, float y, int w, int h, const float *view, const float *proj, int only_object = -1);
 // The slice numbers the preview legend shows (time and filament per line type).  (Slice.cpp)
 nlohmann::json slice_stats_json(const Slic3r::GCodeProcessorResult &r, const std::string &gcode);
 

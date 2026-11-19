@@ -79,6 +79,18 @@ object OrcaCore {
     external fun gizmoDrag(x: Float, y: Float, width: Int, height: Int, view: FloatArray, proj: FloatArray)
     external fun gizmoEnd()
 
+    // Paint.cpp
+    /** 0 none, 1 support, 2 seam, 3 colour, 4 fuzzy skin, 5 brim ears */
+    external fun paintMode(mode: Int)
+    /** phase 0 begin, 1 move, 2 end; state = EnforcerBlockerType; tool 0 brush, 1 smart fill */
+    external fun paintStroke(phase: Int, x: Float, y: Float, width: Int, height: Int, view: FloatArray, proj: FloatArray,
+                             mode: Int, state: Int, radius: Float, tool: Int): Boolean
+    external fun paintClear(mode: Int)
+    /** cmd 0 add at the tapped point, 1 auto at sharp corners; returns the ear count */
+    external fun brimEar(cmd: Int, x: Float, y: Float, width: Int, height: Int, view: FloatArray, proj: FloatArray, radius: Float): Int
+    /** get / adaptive / smooth / adjust / reset; {profile, min, max, layer, height} */
+    external fun layerProfile(cmd: String, args: String): String
+
     // Tools.cpp
     /** cut_preview / cut / simplify / boolean / text / svg / measure_clear; returns objects or {"error"} */
     external fun tool(cmd: String, args: String): String

@@ -77,6 +77,8 @@ private val DESTINATIONS = listOf(
 
 /** What the plate screens (Prepare / Preview) need from the app shell. */
 class PlateHost(val camera: OrbitCamera, val cacheDir: File) {
+    val brush = PaintBrush()
+    var layersOpen by mutableStateOf(false)
     var scene by mutableStateOf<SceneView?>(null)
     var preview by mutableStateOf<PreviewInfo?>(null)
     var openModel: () -> Unit = {}
@@ -91,9 +93,6 @@ class PlateHost(val camera: OrbitCamera, val cacheDir: File) {
     var exactTransform: () -> Unit = {}
     /** Measure tool's last result. */
     var measure by mutableStateOf<org.json.JSONObject?>(null)
-    /** Opens a painting tool (1 support, 2 seam, 3 colour, 4 fuzzy skin, 5 brim ears). */
-    var paint: (Int) -> Unit = {}
-    var variableLayers: () -> Unit = {}
     /** Lets the user pick any file; it arrives copied into app storage. */
     var pickFile: (onPicked: (File) -> Unit) -> Unit = {}
     /** Asks where to save [name], has [produce] write it to a temporary file, then copies it there. */

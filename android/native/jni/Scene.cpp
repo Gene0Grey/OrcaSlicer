@@ -6,6 +6,8 @@
 #include "Session.hpp"
 
 #include "LibVGCode/LibVGCodeWrapper.hpp"
+#include "libslic3r/BrimEarsPoint.hpp"
+#include "libslic3r/TriangleSelector.hpp"
 
 #include <GLES3/gl3.h>
 #include <nlohmann/json.hpp>
@@ -87,7 +89,7 @@ struct GLState
     Program             mesh, flat;
     Mesh                bed_fill, bed_grid, bed_border, axes[3];
     // One draw item per object volume: solid parts opaque, modifiers / negative parts see-through.
-    struct Item { Mesh mesh; std::array<float, 4> color; };
+    struct Item { Mesh mesh; std::array<float, 4> color; bool overlay = false; };
     std::vector<Item>   items;
     uint64_t            scene_version   = 0;
     uint64_t            preview_version = 0;
@@ -204,6 +206,33 @@ void rebuild_scene()
             }
             }
             gl.items.push_back({upload(data, 6), rgba});
+        }
+        // Paint of the open painting gizmo on the picked object, drawn just above its surface.
+        const int pm = g_session.paint_mode;
+        if (pm >= 1 && pm <= 4 && int(oi) == g_session.selected) {
+            const int states = pm == 3 ? int(g_session.bundle->filament_presets.size()) : pm == 4 ? 1 : 2;
+            for (const Slic3r::ModelVolume *v : o->volumes) {
+                const Slic3r::FacetsAnnotation &fa = pm == 1 ? v->supported_facets : pm == 2 ? v->seam_facets : pm == 3 ? v->mmu_segmentation_facets : v->fuzzy_skin_facets;
+                for (int st = 1; st <= states; ++st) {
+                    const indexed_triangle_set its = fa.get_facets(*v, Slic3r::EnforcerBlockerType(st));
+                    if (its.indices.empty()) continue;
+                    std::vector<float> data;
+                    for (const Slic3r::ModelInstance *inst : o->instances) {
+                        const Slic3r::Transform3d t = inst->get_matrix() * v->get_matrix();
+                        for (const auto &f : its.indices) {
+                            const Slic3r::Vec3d p0 = t * its.vertices[f[0]].cast<double>(), p1 = t * its.vertices[f[1]].cast<double>(),
+                                                p2 = t * its.vertices[f[2]].cast<double>();
+                            const Slic3r::Vec3d n = (p1 - p0).cross(p2 - p0).normalized();
+                            for (const Slic3r::Vec3d &q : {p0, p1, p2})
+                                data.insert(data.end(), {float(q.x()), float(q.y()), float(q.z()), float(n.x()), float(n.y()), float(n.z())});
+                        }
+                    }
+                    std::array<float, 4> c = pm == 3 ? filament_color(st)
+                                           : pm == 4 ? std::array<float, 4>{1.00f, 0.69f, 0.00f, 1.f}
+                                           : st == 1 ? std::array<float, 4>{0.30f, 0.55f, 0.95f, 1.f} : std::array<float, 4>{0.90f, 0.28f, 0.30f, 1.f};
+                    gl.items.push_back({upload(data, 6), c, true});
+                }
+            }
         }
     }
 }
@@ -341,6 +370,8 @@ JNI(void, glRender)(JNIEnv *env, jobject, jint mode, jfloatArray jview, jfloatAr
             glDepthMask(pass == 0 ? GL_TRUE : GL_FALSE);
             for (const auto &it : gl.items) {
                 if (!it.mesh.count || (it.color[3] < 1.f) != (pass == 1)) continue;
+                if (it.overlay) { glEnable(GL_POLYGON_OFFSET_FILL); glPolygonOffset(-1.f, -2.f); }
+                else glDisable(GL_POLYGON_OFFSET_FILL);
                 glUniform4fv(gl.mesh.color, 1, it.color.data());
                 glBindBuffer(GL_ARRAY_BUFFER, it.mesh.vbo);
                 glEnableVertexAttribArray(0);
@@ -351,6 +382,7 @@ JNI(void, glRender)(JNIEnv *env, jobject, jint mode, jfloatArray jview, jfloatAr
             }
         }
         glDepthMask(GL_TRUE);
+        glDisable(GL_POLYGON_OFFSET_FILL);
         glDisableVertexAttribArray(0);
         glDisableVertexAttribArray(1);
         // Tool overlays: the cut plane (translucent teal) and measure points (amber crosses).
@@ -377,7 +409,14 @@ JNI(void, glRender)(JNIEnv *env, jobject, jint mode, jfloatArray jview, jfloatAr
                 glDepthMask(GL_TRUE);
                 release(m);
             }
-            for (const Slic3r::Vec3d &p : g_session.marks) {
+            std::vector<Slic3r::Vec3d> points = g_session.marks;
+            // Brim ears of the picked object while their tool is open.
+            if (g_session.paint_mode == 5 && g_session.selected >= 0 && size_t(g_session.selected) < g_session.model.objects.size()) {
+                const Slic3r::ModelObject *po = g_session.model.objects[g_session.selected];
+                for (const Slic3r::BrimPoint &bp : po->brim_points)
+                    points.push_back(po->instances.front()->get_matrix() * bp.pos.cast<double>());
+            }
+            for (const Slic3r::Vec3d &p : points) {
                 GizmoLines cross;
                 const float s = 3.f;
                 cross.xyz = {float(p.x()) - s, float(p.y()), float(p.z()), float(p.x()) + s, float(p.y()), float(p.z()),

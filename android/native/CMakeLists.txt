@@ -21,6 +21,7 @@ add_library(orca_core SHARED
     jni/Presets.cpp
     jni/Tools.cpp
     jni/Preview.cpp
+    jni/Paint.cpp
     # Desktop's GCodeProcessorResult -> libvgcode conversion, reused as is.
     ${CMAKE_SOURCE_DIR}/src/slic3r/GUI/LibVGCode/LibVGCodeWrapper.cpp
 )

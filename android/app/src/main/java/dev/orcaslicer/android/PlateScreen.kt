@@ -124,6 +124,7 @@ private fun SceneHost(state: AppState, host: PlateHost) {
             v.onPreviewInfo = { host.preview = PreviewInfo.parse(it) }
             v.onGizmoEnd = { scope.launch { state.afterGizmo() } }
             v.onMeasure = { host.measure = org.json.JSONObject(it) }
+            v.brush = host.brush
             v.mode = if (state.screen == Screen.Preview) 1 else 0
             v.gizmoMode = state.gizmoMode
             host.scene = v
@@ -147,6 +148,8 @@ private fun PrepareOverlay(state: AppState, host: PlateHost, bottomInset: Dp) {
             val hint = when {
                 state.gizmoMode == 4 -> "Tap a face to lay it on the plate"
                 state.gizmoMode == 5 -> "Tap a point, edge, circle or face; then a second one"
+                state.gizmoMode == 6 -> "One finger paints the picked object; two fingers move the view"
+                state.gizmoMode == 7 -> "Tap the picked object where a brim ear goes"
                 state.gizmoMode != 0 && sel == null -> "Tap an object to pick it"
                 state.gizmoMode == 1 -> "Drag the object to slide it, or an arrow for one axis"
                 state.gizmoMode == 2 -> "Drag a ring to turn it, 5 degree steps"
@@ -163,7 +166,18 @@ private fun PrepareOverlay(state: AppState, host: PlateHost, bottomInset: Dp) {
         if (tools) ToolSheet(state, host, onPick = { p ->
             panel = p
             if (p == ToolPanel.Measure) { state.gizmoMode = 0; state.setGizmo(5); host.measure = null }
-        }, onSvg = { svg = it }, onPaint = { host.paint(it) }, onVariableLayers = { host.variableLayers() }) { tools = false }
+        }, onSvg = { svg = it }, onPaint = { m ->
+            host.brush.mode = m; host.brush.state = 1
+            OrcaCore.paintMode(m)
+            state.gizmoMode = 0; state.setGizmo(if (m == 5) 7 else 6)
+            host.scene?.requestRender()
+        }, onVariableLayers = { host.layersOpen = true }) { tools = false }
+        if (host.layersOpen) VariableLayerDialog(state) { host.layersOpen = false }
+        if (host.brush.mode > 0) PaintPanel(state, host.brush, Modifier.align(Alignment.BottomCenter).padding(bottom = bottomInset)) {
+            OrcaCore.paintMode(0); host.brush.mode = 0
+            if (state.gizmoMode >= 6) state.setGizmo(state.gizmoMode)
+            host.scene?.requestRender()
+        }
         svg?.let { SvgToolDialog(state, it) { svg = null } }
         when (panel) {
             ToolPanel.Cut -> CutPanel(state, Modifier.align(Alignment.BottomCenter).padding(bottom = bottomInset)) { panel = ToolPanel.None }

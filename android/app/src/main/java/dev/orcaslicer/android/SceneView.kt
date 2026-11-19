@@ -86,6 +86,9 @@ class SceneView(context: Context, val camera: OrbitCamera, private val dark: Boo
     var onGizmoEnd: () -> Unit = {}
     /** Measure tool (gizmoMode 5): result of a tap, as measurePick JSON. */
     var onMeasure: (String) -> Unit = {}
+    /** Painting (gizmoMode 6) and brim ears (7) read the brush. */
+    var brush: PaintBrush? = null
+    private var painting = false
     @Volatile var gizmoMode = 0
     private var dragging = false
     @Volatile private var wantPreviewInfo = false
@@ -138,7 +141,10 @@ class SceneView(context: Context, val camera: OrbitCamera, private val dark: Boo
         override fun onSingleTapUp(e: MotionEvent): Boolean {
             if (mode == 0) {
                 camera.update(width, height)
-                if (gizmoMode == 5) {
+                if (gizmoMode == 7) {
+                    val b = brush
+                    if (b != null && OrcaCore.brimEar(0, e.x, e.y, width, height, camera.view.clone(), camera.proj.clone(), b.radius) >= 0) { onGizmoEnd(); requestRender() }
+                } else if (gizmoMode == 5) {
                     val r = OrcaCore.measurePick(e.x, e.y, width, height, camera.view.clone(), camera.proj.clone())
                     onMeasure(r); requestRender()
                 } else if (gizmoMode == 4) {
@@ -159,8 +165,27 @@ class SceneView(context: Context, val camera: OrbitCamera, private val dark: Boo
         }
     })
 
+    /** One finger paints; a second finger ends the stroke and moves the view. */
+    private fun paint(e: MotionEvent): Boolean {
+        val b = brush ?: return false
+        camera.update(width, height)
+        fun stroke(phase: Int) = OrcaCore.paintStroke(phase, e.x, e.y, width, height, camera.view.clone(), camera.proj.clone(), b.mode, b.state, b.radius, b.tool)
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> { painting = true; stroke(0) }
+            MotionEvent.ACTION_MOVE -> if (painting && e.pointerCount == 1 && b.tool == 0) stroke(1)
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_POINTER_DOWN -> if (painting) {
+                painting = false; stroke(2); onGizmoEnd()
+                requestRender()
+                return e.actionMasked != MotionEvent.ACTION_POINTER_DOWN
+            }
+        }
+        if (painting) requestRender()
+        return painting
+    }
+
     private fun gizmo(e: MotionEvent): Boolean {
-        if (mode != 0 || gizmoMode == 0 || gizmoMode == 5) return false
+        if (mode == 0 && gizmoMode == 6) return paint(e)
+        if (mode != 0 || gizmoMode == 0 || gizmoMode == 5 || gizmoMode == 7) return false
         camera.update(width, height)
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN ->
