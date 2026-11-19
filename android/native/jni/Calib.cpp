@@ -94,7 +94,7 @@ void cut_at(double z, bool keep_lower)
 void finish(const Calib_Params &p)
 {
     g_session.calib = std::make_shared<Calib_Params>(p);
-    for (PresetCollection *c : {&g_session.bundle->prints, &g_session.bundle->filaments, &g_session.bundle->printers}) c->update_dirty();
+    for (PresetCollection *c : std::initializer_list<PresetCollection *>{&g_session.bundle->prints, &g_session.bundle->filaments, &g_session.bundle->printers}) c->update_dirty();
 }
 
 void calib_temp(Calib_Params p)

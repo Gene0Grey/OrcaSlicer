@@ -76,7 +76,7 @@ ThumbnailData render_thumbnail(const Model &model, const std::vector<std::string
     const Vec3d f = Vec3d(1., 1., -1.).normalized(), r = f.cross(Vec3d::UnitZ()).normalized(), u = r.cross(f);
     struct Tri { Vec3d p[3]; std::array<float, 3> c; };
     std::vector<Tri> tris;
-    BoundingBox2d box; bool any = false;
+    BoundingBoxf box; bool any = false;
     double zmin = 1e30, zmax = -1e30;
     for (const ModelObject *o : model.objects)
         for (const ModelInstance *inst : o->instances) {
@@ -333,7 +333,8 @@ JNI(jstring, openGcode)(JNIEnv *env, jobject, jstring jpath)
     try {
         GCodeProcessor processor;
         processor.process_file(path);
-        auto result = std::make_shared<GCodeProcessorResult>(std::move(processor.extract_result()));
+        auto result = std::make_shared<GCodeProcessorResult>();
+        *result = processor.extract_result();
         std::lock_guard lock(g_session.mutex);
         g_session.viewer_result = result;
         g_session.viewer_path   = path;

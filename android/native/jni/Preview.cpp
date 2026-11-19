@@ -136,9 +136,7 @@ JNI(jboolean, exportToolpaths)(JNIEnv *env, jobject, jstring jpath)
     const std::string mtl_path = path.substr(0, path.find_last_of('.')) + ".mtl";
     FILE *obj = fopen(path.c_str(), "w"), *mtl = fopen(mtl_path.c_str(), "w");
     if (!obj || !mtl) { if (obj) fclose(obj); if (mtl) fclose(mtl); return JNI_FALSE; }
-    fprintf(obj, "# OrcaSlicer toolpaths
-mtllib %s
-", mtl_path.substr(mtl_path.find_last_of('/') + 1).c_str());
+    fprintf(obj, "# OrcaSlicer toolpaths\nmtllib %s\n", mtl_path.substr(mtl_path.find_last_of('/') + 1).c_str());
     std::map<uint32_t, int> materials;
     const auto vr = viewer.get_view_visible_range();
     size_t vertices = 0;
@@ -150,9 +148,7 @@ mtllib %s
         if (!materials.count(key)) {
             const int id = int(materials.size());
             materials[key] = id;
-            fprintf(mtl, "newmtl m%d
-Kd %.3f %.3f %.3f
-", id, col[0] / 255.f, col[1] / 255.f, col[2] / 255.f);
+            fprintf(mtl, "newmtl m%d\nKd %.3f %.3f %.3f\n", id, col[0] / 255.f, col[1] / 255.f, col[2] / 255.f);
         }
         const Slic3r::Vec3f p0(a.position[0], a.position[1], a.position[2]), p1(b.position[0], b.position[1], b.position[2]);
         Slic3r::Vec3f d = p1 - p0;
@@ -162,15 +158,12 @@ Kd %.3f %.3f %.3f
         const Slic3r::Vec3f down(0.f, 0.f, -b.height);
         const Slic3r::Vec3f q[8] = {p0 + side, p0 - side, p0 - side + down, p0 + side + down,
                                     p1 + side, p1 - side, p1 - side + down, p1 + side + down};
-        for (const auto &v : q) fprintf(obj, "v %.3f %.3f %.3f
-", v.x(), v.y(), v.z());
-        fprintf(obj, "usemtl m%d
-", materials[key]);
+        for (const auto &v : q) fprintf(obj, "v %.3f %.3f %.3f\n", v.x(), v.y(), v.z());
+        fprintf(obj, "usemtl m%d\n", materials[key]);
         const size_t o = vertices + 1;
         const int f[6][4] = {{0, 4, 5, 1}, {1, 5, 6, 2}, {2, 6, 7, 3}, {3, 7, 4, 0}, {0, 1, 2, 3}, {4, 7, 6, 5}};
         for (const auto &face : f)
-            fprintf(obj, "f %zu %zu %zu %zu
-", o + face[0], o + face[1], o + face[2], o + face[3]);
+            fprintf(obj, "f %zu %zu %zu %zu\n", o + face[0], o + face[1], o + face[2], o + face[3]);
         vertices += 8;
     }
     fclose(obj);

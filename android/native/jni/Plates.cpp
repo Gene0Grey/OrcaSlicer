@@ -56,10 +56,10 @@ std::vector<ModelInstance *> arrange_model(bool spill)
 {
     Session &s = g_session;
     const int p = s.current;
-    ArrangePolygons polys;
+    arrangement::ArrangePolygons polys;
     std::vector<ModelInstance *> insts;
     for (auto &[o, k] : instances_on(p)) {
-        ArrangePolygon ap;
+        arrangement::ArrangePolygon ap;
         o->instances[k]->get_arrange_polygon(&ap);
         polys.push_back(std::move(ap));
         insts.push_back(o->instances[k]);
@@ -68,7 +68,7 @@ std::vector<ModelInstance *> arrange_model(bool spill)
     for (ModelObject *o : s.model.objects)
         for (size_t k = 0; k < o->instances.size(); ++k)
             if (s.plate_of(*o, k) < 0) {
-                ArrangePolygon ap;
+                arrangement::ArrangePolygon ap;
                 o->instances[k]->get_arrange_polygon(&ap);
                 polys.push_back(std::move(ap));
                 insts.push_back(o->instances[k]);
@@ -84,11 +84,11 @@ std::vector<ModelInstance *> arrange_model(bool spill)
     // Results come in plate p's frame; virtual beds k > 0 map to plates p + k.
     const Vec2d old_origin = s.plate_origin(p);
     int last = p;
-    for (const ArrangePolygon &ap : polys) if (spill && ap.bed_idx > 0) last = std::max(last, p + ap.bed_idx);
+    for (const arrangement::ArrangePolygon &ap : polys) if (spill && ap.bed_idx > 0) last = std::max(last, p + ap.bed_idx);
     if (last >= int(s.plates.size())) set_plate_count(size_t(last + 1));
     std::vector<ModelInstance *> overflow;
     for (size_t i = 0; i < polys.size(); ++i) {
-        const ArrangePolygon &ap = polys[i];
+        const arrangement::ArrangePolygon &ap = polys[i];
         if (ap.bed_idx < 0 || (ap.bed_idx > 0 && !spill)) { overflow.push_back(insts[i]); continue; }
         const Vec2d shift = s.plate_origin(p + ap.bed_idx) - old_origin;
         insts[i]->apply_arrange_result(ap.translation.cast<double>() + Vec2d(scaled(shift.x()), scaled(shift.y())), ap.rotation);

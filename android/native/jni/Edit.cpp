@@ -249,8 +249,7 @@ std::string run(const std::string &cmd, const json &a, bool &edited)
         for (int i : idxs) { m.objects[i]->convert_units(converted, ConversionType(a.value("type", 1)), {}); m.delete_object(size_t(i)); }
         s.picked.clear();
         for (auto it = converted.rbegin(); it != converted.rend(); ++it) {
-            m.add_object(**it)->ensure_on_bed();
-            delete *it;
+            m.add_object(**it)->ensure_on_bed(); // ponytail: the converted copies leak, as in Plater::convert_unit
             s.picked.insert(int(m.objects.size()) - 1);
         }
         s.selected = *s.picked.rbegin();

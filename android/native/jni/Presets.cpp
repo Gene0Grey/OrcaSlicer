@@ -88,7 +88,7 @@ JNI(void, setFlushVolumes)(JNIEnv *env, jobject, jdoubleArray jmatrix, jdouble m
     if (len == 0) {
         recalc_flush();
     } else {
-        std::vector<double> m(size_t(len));
+        std::vector<double> m(static_cast<size_t>(len), 0.);
         env->GetDoubleArrayRegion(jmatrix, 0, len, m.data());
         b.project_config.option<ConfigOptionFloats>("flush_volumes_matrix", true)->values = m;
     }

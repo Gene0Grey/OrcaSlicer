@@ -5,6 +5,7 @@
 
 #include "Session.hpp"
 
+#include "libslic3r/ClipperUtils.hpp"
 #include "libslic3r/CutUtils.hpp"
 #include "libslic3r/Emboss.hpp"
 #include "libslic3r/EmbossShape.hpp"
@@ -132,7 +133,7 @@ std::string run(const std::string &cmd, const json &a, bool &edited)
             const std::string text = a.value("text", std::string("Text")), font = a.value("font", std::string("/system/fonts/Roboto-Regular.ttf"));
             Emboss::FontFileWithCache ff(Emboss::create_font_file(font.c_str()));
             if (!ff.has_value()) return "Can't read that font.";
-            FontProp prop(float(size));
+            FontProp prop(static_cast<float>(size));
             shapes = Emboss::text2shapes(ff, text.c_str(), prop).expolygons;
             scale  = Emboss::get_text_shape_scale(prop, *ff.font_file);
             name = text.substr(0, 24);
