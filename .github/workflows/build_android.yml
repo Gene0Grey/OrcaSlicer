@@ -104,11 +104,11 @@ jobs:
       # Maven Central downloads fail now and then on the runners: one retry.
       - name: Build APK
         working-directory: android
-        run: bash gradlew assembleDebug --console=plain || (sleep 60 && bash gradlew assembleDebug --console=plain --refresh-dependencies)
+        run: bash gradlew assembleRelease --console=plain || (sleep 60 && bash gradlew assembleRelease --console=plain --refresh-dependencies)
 
       - uses: actions/upload-artifact@v4
         with:
           name: orcaslicer-android-${{ env.ORCA_ABI }}
           path: |
-            android/app/build/outputs/apk/debug/*.apk
+            android/app/build/outputs/apk/release/*.apk
             android/app/src/main/jniLibs/${{ env.ORCA_ABI }}/*.so
